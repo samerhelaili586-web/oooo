@@ -33,6 +33,110 @@ const IconBriefcase = (p) => <Icon {...p} path={<><rect x="2" y="7" width="20" h
 const IconTarget = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>} />;
 const IconChevronDown = (p) => <Icon {...p} path={<path d="m6 9 6 6 6-6" />} />;
 const IconX = (p) => <Icon {...p} path={<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>} />;
+const IconSun = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>} />;
+const IconMoon = (p) => <Icon {...p} path={<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />} />;
+const IconAlertTriangle = (p) => <Icon {...p} path={<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>} />;
+
+/* ------------------------------------------------------------------ */
+/* Skeleton loading placeholders — shimmer effect via CSS keyframes   */
+/* defined in the global <style> block below.                        */
+/* ------------------------------------------------------------------ */
+const SkeletonBlock = ({ width = '100%', height = '14px', radius = '8px', style = {} }) => (
+  <div className="yalla-skeleton" style={{ width, height, borderRadius: radius, ...style }} />
+);
+const SkeletonCircle = ({ size = '38px', style = {} }) => (
+  <div className="yalla-skeleton" style={{ width: size, height: size, borderRadius: '50%', ...style }} />
+);
+const SkeletonTaskCard = () => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px', borderRadius: '14px', border: '1px solid rgba(15,23,42,0.06)', backgroundColor: 'rgba(255,255,255,0.7)', marginBottom: '14px' }}>
+    <SkeletonCircle size="36px" />
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <SkeletonBlock width="45%" height="13px" />
+      <SkeletonBlock width="30%" height="10px" />
+    </div>
+    <SkeletonBlock width="70px" height="22px" radius="999px" />
+    <SkeletonBlock width="70px" height="22px" radius="999px" />
+  </div>
+);
+const SkeletonTaskList = ({ rows = 3 }) => (
+  <div>{Array.from({ length: rows }).map((_, i) => <SkeletonTaskCard key={i} />)}</div>
+);
+const SkeletonAnalytics = () => (
+  <div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '18px', padding: '24px 26px', borderRadius: '14px', border: '1px solid rgba(15,23,42,0.06)', backgroundColor: 'rgba(255,255,255,0.78)' }}>
+          <SkeletonCircle size="48px" />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <SkeletonBlock width="60%" height="10px" />
+            <SkeletonBlock width="40%" height="18px" />
+          </div>
+        </div>
+      ))}
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '28px' }}>
+      <div style={{ padding: '32px', borderRadius: '14px', border: '1px solid rgba(15,23,42,0.06)', backgroundColor: 'rgba(255,255,255,0.8)' }}>
+        <SkeletonBlock width="180px" height="18px" style={{ marginBottom: '24px' }} />
+        <div style={{ display: 'flex', gap: '28px', alignItems: 'center' }}>
+          <SkeletonCircle size="150px" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+            {Array.from({ length: 3 }).map((_, i) => <SkeletonBlock key={i} height="12px" />)}
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: '32px', borderRadius: '14px', border: '1px solid rgba(15,23,42,0.06)', backgroundColor: 'rgba(255,255,255,0.8)' }}>
+        <SkeletonBlock width="260px" height="18px" style={{ marginBottom: '24px' }} />
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '18px' }}>
+            <SkeletonCircle size="34px" />
+            <SkeletonBlock height="10px" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
+/* Confirm-before-delete modal — replaces window.confirm() everywhere */
+/* ------------------------------------------------------------------ */
+function useConfirmDialog() {
+  const [state, setState] = useState(null);
+
+  const confirm = (opts = {}) => new Promise((resolve) => {
+    setState({
+      title: opts.title || "Confirmer l'action",
+      message: opts.message || 'Êtes-vous sûr de vouloir continuer ?',
+      confirmLabel: opts.confirmLabel || 'Confirmer',
+      cancelLabel: opts.cancelLabel || 'Annuler',
+      resolve,
+    });
+  });
+
+  const handleClose = (result) => {
+    if (state?.resolve) state.resolve(result);
+    setState(null);
+  };
+
+  const ConfirmDialog = () => {
+    if (!state) return null;
+    return (
+      <div style={styles.modalOverlay} onClick={() => handleClose(false)}>
+        <div style={styles.confirmModalCard} onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true">
+          <div style={styles.confirmIconWrap}><IconAlertTriangle size={22} /></div>
+          <h3 style={styles.confirmTitle}>{state.title}</h3>
+          <p style={styles.confirmMessage}>{state.message}</p>
+          <div style={styles.confirmActions}>
+            <button style={styles.cancelButton} className="yalla-ghost-btn" onClick={() => handleClose(false)} autoFocus>{state.cancelLabel}</button>
+            <button style={styles.confirmDangerButton} className="yalla-primary-btn" onClick={() => handleClose(true)}>{state.confirmLabel}</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return { confirm, ConfirmDialog };
+}
 
 function App() {
   const [currentView, setCurrentView] = useState('login');
@@ -47,6 +151,29 @@ function App() {
   // Core Data Lists
   const [tasks, setTasks] = useState([]);
   const [teamList, setTeamList] = useState([]);
+
+  // Loading flags for skeleton placeholders
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [loadingLedgers, setLoadingLedgers] = useState(false);
+
+  // Dark mode
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('yalla-theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch { /* ignore */ }
+    return 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-yalla-theme', theme);
+    try { localStorage.setItem('yalla-theme', theme); } catch { /* ignore */ }
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => (t === 'light' ? 'dark' : 'light'));
+
+  // Confirm-before-delete dialog
+  const { confirm, ConfirmDialog } = useConfirmDialog();
 
   // Admin form management states
   const [newEmployeeName, setNewEmployeeName] = useState('');
@@ -119,6 +246,7 @@ function App() {
   };
 
   const fetchEmployeeTasks = async (userId) => {
+    setLoadingTasks(true);
     try {
       const response = await fetch(`http://127.0.0.1:5050/api/tasks/${userId}`);
       if (response.ok) {
@@ -126,6 +254,7 @@ function App() {
         setTasks(Array.isArray(data) ? data : []);
       }
     } catch (err) { console.error(err); }
+    finally { setLoadingTasks(false); }
   };
 
   const handleEmployeeSelfCreateTask = async (e) => {
@@ -155,7 +284,12 @@ function App() {
   };
 
   const handleDeleteEmployeeOwnedTask = async (taskId) => {
-    if (!window.confirm("Voulez-vous supprimer ce shooting de votre planning ?")) return;
+    const ok = await confirm({
+      title: "Supprimer ce shooting ?",
+      message: "Cette action est définitive et ne peut pas être annulée.",
+      confirmLabel: "Supprimer",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`http://127.0.0.1:5050/api/tasks/${taskId}`, { method: 'DELETE' });
       if (res.ok && currentUser) {
@@ -210,7 +344,12 @@ function App() {
   };
 
   const handleDeleteComment = async (commentId) => {
-    if (!window.confirm("Voulez-vous supprimer ce commentaire ?")) return;
+    const ok = await confirm({
+      title: "Supprimer ce commentaire ?",
+      message: "Le commentaire sera retiré définitivement du fil de discussion.",
+      confirmLabel: "Supprimer",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`http://127.0.0.1:5050/api/comments/${commentId}`, { method: 'DELETE' });
       if (res.ok) {
@@ -254,6 +393,7 @@ function App() {
   };
 
   const fetchAdminDashboardLedgers = async () => {
+    setLoadingLedgers(true);
     try {
       const uRes = await fetch('http://127.0.0.1:5050/api/admin/users');
       if (uRes.ok) {
@@ -266,6 +406,7 @@ function App() {
         setTasks(Array.isArray(tData) ? tData : []);
       }
     } catch (err) { console.error(err); }
+    finally { setLoadingLedgers(false); }
   };
 
   const fetchAdminStats = async () => {
@@ -305,7 +446,12 @@ function App() {
   };
 
   const handleDeleteEmployee = async (id) => {
-    if (!window.confirm("Voulez-vous supprimer ce collaborateur et toutes ses missions ?")) return;
+    const ok = await confirm({
+      title: "Supprimer ce collaborateur ?",
+      message: "Toutes ses missions assignées resteront visibles mais ne pourront plus être réattribuées automatiquement.",
+      confirmLabel: "Supprimer",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`http://127.0.0.1:5050/api/admin/users/${id}`, { method: 'DELETE' });
       if (res.ok) { fetchAdminDashboardLedgers(); }
@@ -355,7 +501,12 @@ function App() {
   };
 
   const handleDeleteTask = async (id) => {
-    if (!window.confirm("Voulez-vous supprimer définitivement ce planning de shooting ?")) return;
+    const ok = await confirm({
+      title: "Supprimer ce shooting ?",
+      message: "Cette action est définitive et ne peut pas être annulée.",
+      confirmLabel: "Supprimer",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`http://127.0.0.1:5050/api/admin/tasks/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -477,14 +628,39 @@ function App() {
         /* Modal entrance */
         @keyframes yallaModalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes yallaOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Skeleton shimmer */
+        @keyframes yallaShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .yalla-skeleton {
+          background: linear-gradient(90deg, #eef1f6 25%, #f8fafc 37%, #eef1f6 63%);
+          background-size: 400% 100%;
+          animation: yallaShimmer 1.4s ease infinite;
+        }
+
+        /* ------------------------------------------------------------ */
+        /* Dark mode — flips the core surfaces via [data-yalla-theme]   */
+        /* ------------------------------------------------------------ */
+        [data-yalla-theme="dark"] body { background-color: #0b1220; }
+        [data-yalla-theme="dark"] ::placeholder { color: #64748b; }
+        [data-yalla-theme="dark"] .yalla-bg-flip { background: linear-gradient(180deg, #0b1220 0%, #0f172a 45%, #111827 100%) !important; }
+        [data-yalla-theme="dark"] .yalla-surface-flip { background-color: rgba(30, 41, 59, 0.85) !important; border-color: rgba(255,255,255,0.08) !important; color: #e2e8f0; }
+        [data-yalla-theme="dark"] .yalla-surface-flip-solid { background-color: #1e293b !important; border-color: rgba(255,255,255,0.08) !important; color: #e2e8f0; }
+        [data-yalla-theme="dark"] .yalla-text-flip { color: #f1f5f9 !important; }
+        [data-yalla-theme="dark"] .yalla-text-muted-flip { color: #94a3b8 !important; }
+        [data-yalla-theme="dark"] .yalla-input-flip { background-color: rgba(15,23,42,0.6) !important; border-color: rgba(255,255,255,0.1) !important; color: #e2e8f0 !important; }
+        [data-yalla-theme="dark"] .yalla-input-flip::placeholder { color: #64748b !important; }
+        [data-yalla-theme="dark"] .yalla-row-flip { background-color: rgba(15,23,42,0.45) !important; border-color: rgba(255,255,255,0.06) !important; }
+        [data-yalla-theme="dark"] .yalla-divider-flip { background-color: rgba(255,255,255,0.08) !important; }
+        [data-yalla-theme="dark"] .yalla-skeleton { background: linear-gradient(90deg, #1e293b 25%, #2a374c 37%, #1e293b 63%); background-size: 400% 100%; }
+        [data-yalla-theme="dark"] .yalla-sidebar-flip { background-color: rgba(15, 23, 42, 0.7) !important; border-color: rgba(255,255,255,0.06) !important; }
       `}</style>
 
       {/* ADMIN SIDEBAR NAVIGATION */}
       {(currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics') && (
-        <div style={styles.adminSidebar} className="yalla-sidebar">
+        <div style={styles.adminSidebar} className="yalla-sidebar yalla-sidebar-flip">
           <div style={styles.sidebarBrandRow}>
             <div style={styles.sidebarBrandBadge} className="yalla-brand-badge"><IconLayers size={16} /></div>
-            <span style={styles.sidebarBrandText}>YALLA</span>
+            <span style={styles.sidebarBrandText} className="yalla-text-flip">YALLA</span>
           </div>
 
           <div style={styles.sidebarNavGroup}>
@@ -511,6 +687,11 @@ function App() {
             </button>
           </div>
 
+          <button onClick={toggleTheme} style={styles.themeToggleBtn} className="yalla-icon-btn">
+            {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
+            {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+          </button>
+
           <button style={styles.sidebarLogoutItem} className="yalla-logout-btn" onClick={logoutAndFlushState}><IconLogout size={15} /> Déconnexion</button>
         </div>
       )}
@@ -519,18 +700,21 @@ function App() {
       {currentView === 'login' && (
         <>
           <div style={styles.topNavigation}>
+            <button style={styles.themeToggleFloating} className="yalla-icon-btn" onClick={toggleTheme}>
+              {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
+            </button>
             <button style={styles.ghostAdminButton} onClick={() => { setCurrentView('admin_login'); setErrorMessage(''); }}>
               <IconSettings size={15} /> Administration
             </button>
           </div>
-          <div style={styles.glassCard}>
+          <div style={styles.glassCard} className="yalla-surface-flip">
             <div style={styles.logoWrapper}><img src="/logo.png" alt="Yalla" style={styles.brandLogo} /></div>
-            <h2 style={styles.cardHeaderTitle}>Planifier un Shooting</h2>
-            <p style={styles.securityReminder}>Votre code unique est strictement personnel. Il ne doit en aucun cas être partagé et relève entièrement de votre responsabilité.</p>
+            <h2 style={styles.cardHeaderTitle} className="yalla-text-flip">Planifier un Shooting</h2>
+            <p style={styles.securityReminder} className="yalla-text-muted-flip">Votre code unique est strictement personnel. Il ne doit en aucun cas être partagé et relève entièrement de votre responsabilité.</p>
             <form onSubmit={handleEmployeeLogin} style={styles.authForm}>
               <div style={styles.inputContainer}>
                 <span style={styles.inputIcon}><IconKey size={16} /></span>
-                <input type="text" placeholder="Saisissez votre code unique" style={styles.pillInput} value={uniqueCode} onChange={(e) => setUniqueCode(e.target.value)} />
+                <input type="text" placeholder="Saisissez votre code unique" style={styles.pillInput} className="yalla-input-flip" value={uniqueCode} onChange={(e) => setUniqueCode(e.target.value)} />
               </div>
               <button type="submit" style={styles.primaryPillButton} className="yalla-primary-btn">Vérifier le code</button>
             </form>
@@ -541,26 +725,26 @@ function App() {
 
       {/* 2. ADMIN LOGIN */}
       {currentView === 'admin_login' && (
-        <div style={styles.glassCard}>
+        <div style={styles.glassCard} className="yalla-surface-flip">
           <div style={styles.backLinkWrapper} onClick={() => { setCurrentView('login'); setErrorMessage(''); }}>
             <IconArrowLeft size={16} /> Retour au formulaire
           </div>
           <div style={styles.lockBadgeContainer}><div style={styles.blueCircleLockBadge}><IconLock size={22} /></div></div>
-          <h2 style={styles.adminCardTitle}>Administration</h2>
-          <p style={styles.adminCardSubtitle}>Connectez-vous pour accéder à l'interface</p>
+          <h2 style={styles.adminCardTitle} className="yalla-text-flip">Administration</h2>
+          <p style={styles.adminCardSubtitle} className="yalla-text-muted-flip">Connectez-vous pour accéder à l'interface</p>
           <form onSubmit={handleAdminLogin} style={styles.authForm}>
             <div style={styles.fieldBlockLayout}>
-              <label style={styles.fieldInputLabel}>Email</label>
+              <label style={styles.fieldInputLabel} className="yalla-text-flip">Email</label>
               <div style={styles.inputContainer}>
                 <span style={styles.inputIcon}><IconMail size={16} /></span>
-                <input type="email" placeholder="votre.email@exemple.com" style={styles.pillInput} value={adminEmail} onChange={e => setAdminEmail(e.target.value)} required />
+                <input type="email" placeholder="votre.email@exemple.com" style={styles.pillInput} className="yalla-input-flip" value={adminEmail} onChange={e => setAdminEmail(e.target.value)} required />
               </div>
             </div>
             <div style={styles.fieldBlockLayout}>
-              <label style={styles.fieldInputLabel}>Mot de passe</label>
+              <label style={styles.fieldInputLabel} className="yalla-text-flip">Mot de passe</label>
               <div style={styles.inputContainer}>
                 <span style={styles.inputIcon}><IconLock size={16} /></span>
-                <input type="password" placeholder="••••••••" style={styles.pillInput} value={adminPassword} onChange={e => setAdminPassword(e.target.value)} required />
+                <input type="password" placeholder="••••••••" style={styles.pillInput} className="yalla-input-flip" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} required />
               </div>
             </div>
             <button type="submit" style={styles.primaryAdminConnectButton} className="yalla-primary-btn">Se connecter</button>
@@ -574,27 +758,33 @@ function App() {
         <div style={styles.dashboardContainer}>
           <div style={styles.dashHeader}>
             <div>
-              <h1 style={styles.mainHeading}>Bonjour, {currentUser?.name}</h1>
-              <p style={styles.subHeading}>Gérez vos horaires et créez vos propres missions</p>
+              <h1 style={styles.mainHeading} className="yalla-text-flip">Bonjour, {currentUser?.name}</h1>
+              <p style={styles.subHeading} className="yalla-text-muted-flip">Gérez vos horaires et créez vos propres missions</p>
             </div>
-            <button style={styles.logoutBtn} className="yalla-logout-btn" onClick={logoutAndFlushState}><IconLogout size={15} /> Déconnexion</button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={toggleTheme} style={styles.themeToggleBtn} className="yalla-icon-btn">
+                {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
+                {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+              </button>
+              <button style={styles.logoutBtn} className="yalla-logout-btn" onClick={logoutAndFlushState}><IconLogout size={15} /> Déconnexion</button>
+            </div>
           </div>
 
           <div style={styles.pillStatsGrid} className="yalla-pill-grid">
-            <div style={styles.pillStatCard}>
+            <div style={styles.pillStatCard} className="yalla-surface-flip">
               <span style={{ ...styles.pillStatDot, backgroundColor: '#64748b' }} />
-              <span style={styles.pillStatValue}>{(tasks || []).length}</span>
-              <span style={styles.pillStatLabel}>Total</span>
+              <span style={styles.pillStatValue} className="yalla-text-flip">{(tasks || []).length}</span>
+              <span style={styles.pillStatLabel} className="yalla-text-muted-flip">Total</span>
             </div>
-            <div style={styles.pillStatCard}>
+            <div style={styles.pillStatCard} className="yalla-surface-flip">
               <span style={{ ...styles.pillStatDot, backgroundColor: '#f59e0b' }} />
-              <span style={styles.pillStatValue}>{(tasks || []).filter(t => t.status === 'En cours').length}</span>
-              <span style={styles.pillStatLabel}>En cours</span>
+              <span style={styles.pillStatValue} className="yalla-text-flip">{(tasks || []).filter(t => t.status === 'En cours').length}</span>
+              <span style={styles.pillStatLabel} className="yalla-text-muted-flip">En cours</span>
             </div>
-            <div style={styles.pillStatCard}>
+            <div style={styles.pillStatCard} className="yalla-surface-flip">
               <span style={{ ...styles.pillStatDot, backgroundColor: '#10b981' }} />
-              <span style={styles.pillStatValue}>{(tasks || []).filter(t => t.status === 'Terminé').length}</span>
-              <span style={styles.pillStatLabel}>Terminés</span>
+              <span style={styles.pillStatValue} className="yalla-text-flip">{(tasks || []).filter(t => t.status === 'Terminé').length}</span>
+              <span style={styles.pillStatLabel} className="yalla-text-muted-flip">Terminés</span>
             </div>
           </div>
 
@@ -602,9 +792,9 @@ function App() {
             type="button"
             onClick={() => setShowCreateShootingModal(true)}
             style={{ ...styles.premiumUserCard, marginBottom: '24px', backgroundColor: 'rgba(255, 255, 255, 0.9)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', border: 'none', textAlign: 'left', width: '100%' }}
-            className="yalla-row-card"
+            className="yalla-row-card yalla-surface-flip"
           >
-            <span style={{ ...styles.userTaskTitleText, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ ...styles.userTaskTitleText, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }} className="yalla-text-flip">
               <IconPlus size={18} /> Créer un shooting personnel
             </span>
             <IconChevronDown size={18} style={{ color: '#64748b' }} />
@@ -615,9 +805,9 @@ function App() {
               style={{ ...styles.modalOverlay, animation: 'yallaOverlayIn 0.18s ease' }}
               onClick={() => setShowCreateShootingModal(false)}
             >
-              <div style={{ ...styles.modalCard, animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ ...styles.modalCard, animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} className="yalla-surface-flip-solid" onClick={(e) => e.stopPropagation()}>
                 <div style={styles.modalHeader}>
-                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }} className="yalla-text-flip">
                     <IconPlus size={18} /> Créer un shooting personnel
                   </h3>
                   <button type="button" onClick={() => setShowCreateShootingModal(false)} style={styles.modalCloseBtn} className="yalla-icon-btn">
@@ -626,11 +816,11 @@ function App() {
                 </div>
                 <form onSubmit={handleEmployeeSelfCreateTask} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} value={newEmployeeTaskTitle} onChange={e => setNewEmployeeTaskTitle(e.target.value)} required />
-                    <input type="date" style={styles.premiumInput} value={newEmployeeTaskDate} onChange={e => setNewEmployeeTaskDate(e.target.value)} min={todayISODate} required />
+                    <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeTaskTitle} onChange={e => setNewEmployeeTaskTitle(e.target.value)} required />
+                    <input type="date" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeTaskDate} onChange={e => setNewEmployeeTaskDate(e.target.value)} min={todayISODate} required />
                   </div>
-                  <textarea placeholder="Instructions ou notes complémentaires..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} value={newEmployeeTaskDesc} onChange={e => setNewEmployeeTaskDesc(e.target.value)} />
-                  <select style={styles.premiumSelect} value={newEmployeeTaskPriority} onChange={e => setNewEmployeeTaskPriority(e.target.value)}>
+                  <textarea placeholder="Instructions ou notes complémentaires..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} className="yalla-input-flip" value={newEmployeeTaskDesc} onChange={e => setNewEmployeeTaskDesc(e.target.value)} />
+                  <select style={styles.premiumSelect} className="yalla-input-flip" value={newEmployeeTaskPriority} onChange={e => setNewEmployeeTaskPriority(e.target.value)}>
                     <option value="Basse">Priorité basse</option>
                     <option value="Normale">Priorité normale</option>
                     <option value="Haute">Priorité haute</option>
@@ -646,17 +836,19 @@ function App() {
           )}
 
           <div style={styles.scrollArea}>
-            {!tasks || tasks.length === 0 ? (
-              <div style={styles.emptyAlert}>Aucun shooting au planning pour le moment.</div>
+            {loadingTasks ? (
+              <SkeletonTaskList rows={3} />
+            ) : !tasks || tasks.length === 0 ? (
+              <div style={styles.emptyAlert} className="yalla-surface-flip">Aucun shooting au planning pour le moment.</div>
             ) : (
               (tasks || []).map(t => {
                 const totalDurationStr = calculateTotalDuration(t.started_at, t.finished_at);
                 return (
-                  <div key={t.id} style={styles.premiumUserCard} className="yalla-row-card">
+                  <div key={t.id} style={styles.premiumUserCard} className="yalla-row-card yalla-surface-flip">
                     <div style={styles.userCardHeader}>
                       <div style={styles.userCardLeft}>
                         <span style={styles.shootingIconPrefix}><IconCamera size={20} /></span>
-                        <h3 style={styles.userTaskTitleText}>{t.title}</h3>
+                        <h3 style={styles.userTaskTitleText} className="yalla-text-flip">{t.title}</h3>
                         <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
                         {isTaskOverdue(t) && (
                           <span style={{ ...styles.statusBadge, backgroundColor: '#fee2e2', color: '#b91c1c', fontSize: '0.7rem', padding: '3px 9px' }}>En retard</span>
@@ -687,12 +879,12 @@ function App() {
                       </div>
                     </div>
 
-                    <div style={styles.cardDividerLine} />
-                    <p style={styles.userTaskDescriptionParagraph}>{t.description ? t.description : "Aucune instruction spécifique rédigée."}</p>
+                    <div style={styles.cardDividerLine} className="yalla-divider-flip" />
+                    <p style={styles.userTaskDescriptionParagraph} className="yalla-text-flip">{t.description ? t.description : "Aucune instruction spécifique rédigée."}</p>
 
-                    <div style={{ display: 'flex', gap: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', marginTop: '14px', alignItems: 'center', flexWrap: 'wrap', border: '1px solid #edf2f7' }}>
+                    <div style={{ display: 'flex', gap: '16px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', marginTop: '14px', alignItems: 'center', flexWrap: 'wrap', border: '1px solid #edf2f7' }} className="yalla-row-flip">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}>
-                        <span style={{ fontWeight: '600', color: '#475569' }}>Début :</span>
+                        <span style={{ fontWeight: '600', color: '#475569' }} className="yalla-text-muted-flip">Début :</span>
                         <input
                           type="time"
                           value={t.started_at || ''}
@@ -701,7 +893,7 @@ function App() {
                         />
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}>
-                        <span style={{ fontWeight: '600', color: '#475569' }}>Fin :</span>
+                        <span style={{ fontWeight: '600', color: '#475569' }} className="yalla-text-muted-flip">Fin :</span>
                         <input
                           type="time"
                           value={t.finished_at || ''}
@@ -719,7 +911,7 @@ function App() {
 
                     {t?.comments && t?.comments.length > 0 && (
                       <div style={styles.commentsHistoryBlock}>
-                        <h4 style={styles.historyTitle}>Suivi d'avancement :</h4>
+                        <h4 style={styles.historyTitle} className="yalla-text-muted-flip">Suivi d'avancement :</h4>
                         {(t.comments || []).map(c => (
                           <div
                             key={c.id}
@@ -728,7 +920,7 @@ function App() {
                             onMouseLeave={() => setHoveredCommentId(null)}
                           >
                             <span style={styles.commentTimeBadge}>[{c.time}]</span>
-                            <p style={styles.commentBubbleText}>{c.text}</p>
+                            <p style={styles.commentBubbleText} className="yalla-text-flip">{c.text}</p>
 
                             {hoveredCommentId === c.id && (
                               <div style={styles.menuAnchorWrapper}>
@@ -740,7 +932,7 @@ function App() {
                                 </button>
 
                                 {activeMenuCommentId === c.id && (
-                                  <div style={styles.dropdownPopupBox}>
+                                  <div style={styles.dropdownPopupBox} className="yalla-surface-flip-solid">
                                     <button style={styles.dropdownActionItem} onClick={() => handleEditComment(c.id, c.text)}><IconEdit size={13} /> Modifier</button>
                                     <button style={{ ...styles.dropdownActionItem, color: '#dc2626' }} onClick={() => handleDeleteComment(c.id)}><IconTrash size={13} /> Supprimer</button>
                                   </div>
@@ -752,13 +944,14 @@ function App() {
                       </div>
                     )}
 
-                    <div style={styles.cardDividerLine} />
+                    <div style={styles.cardDividerLine} className="yalla-divider-flip" />
 
                     <div style={styles.commentBarLayout}>
                       <input
                         type="text"
                         placeholder="Ajouter une note d'avancement..."
                         style={styles.commentBarInput}
+                        className="yalla-input-flip"
                         value={typedComments[t.id] || ''}
                         onChange={(e) => setTypedComments({ ...typedComments, [t.id]: e.target.value })}
                       />
@@ -777,119 +970,126 @@ function App() {
         <div style={styles.adminLayout}>
           <div style={styles.dashHeader}>
             <div>
-              <h1 style={styles.mainHeading}>Direction Générale</h1>
-              <p style={styles.subHeading}>Génération des accès sécurisés et assignation des shootings de production</p>
+              <h1 style={styles.mainHeading} className="yalla-text-flip">Direction Générale</h1>
+              <p style={styles.subHeading} className="yalla-text-muted-flip">Génération des accès sécurisés et assignation des shootings de production</p>
             </div>
           </div>
 
           {/* --- Analytics summary layer --- */}
-          <div style={styles.analyticsGrid} className="yalla-analytics-grid">
-            <div style={styles.analyticsCard}>
-              <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#eef2ff', color: '#4338ca' }}><IconBriefcase size={22} /></div>
-              <div>
-                <p style={styles.analyticsLabel}>Projets totaux</p>
-                <p style={styles.analyticsValue}>{totalProjects}</p>
-              </div>
-            </div>
-            <div style={styles.analyticsCard}>
-              <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#e0f2fe', color: '#0369a1' }}><IconCamera size={22} /></div>
-              <div>
-                <p style={styles.analyticsLabel}>Équipe Production</p>
-                <p style={styles.analyticsValue}>{prodCount}</p>
-              </div>
-            </div>
-            <div style={styles.analyticsCard}>
-              <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#fce7f3', color: '#be185d' }}><IconTarget size={22} /></div>
-              <div>
-                <p style={styles.analyticsLabel}>Community Managers</p>
-                <p style={styles.analyticsValue}>{cmCount}</p>
-              </div>
-            </div>
-          </div>
-
-          <div style={styles.adminGridSplit}>
-            <div style={styles.premiumControlBlock} className="yalla-panel">
-              <h2 style={styles.blockTitle}>{editingUserId ? "Modifier le profil" : "Équipe & Codes Privés"}</h2>
-              <form onSubmit={handleSaveEmployeeForm} style={styles.stackedForm}>
-                <input type="text" placeholder="Nom complet" style={styles.premiumInput} value={newEmployeeName} onChange={e => setNewEmployeeName(e.target.value)} required />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <select
-                    style={styles.premiumSelect}
-                    value={newEmployeeSubRole}
-                    onChange={e => setNewEmployeeSubRole(e.target.value)}
-                  >
-                    <option value="prod">Production (Prod)</option>
-                    <option value="cm">Community Manager (CM)</option>
-                  </select>
-                  <div style={styles.actionInputGroup}>
-                    <input type="text" placeholder="Code d'accès" style={styles.premiumInput} value={newEmployeeCode} onChange={e => setNewEmployeeCode(e.target.value)} required />
-                    <button type="button" onClick={handleAutoGenerateCode} style={styles.generateButton} className="yalla-icon-btn"><IconZap size={14} /></button>
+          {loadingLedgers && !teamList.length && !tasks.length ? (
+            <SkeletonAnalytics />
+          ) : (
+            <>
+              <div style={styles.analyticsGrid} className="yalla-analytics-grid">
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
+                  <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#eef2ff', color: '#4338ca' }}><IconBriefcase size={22} /></div>
+                  <div>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">Projets totaux</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{totalProjects}</p>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" style={{ ...styles.premiumAddButton, flex: 2, backgroundColor: editingUserId ? '#d97706' : '#2b3e9a' }} className="yalla-primary-btn">
-                    {editingUserId ? "Sauvegarder" : "Enregistrer"}
-                  </button>
-                  {editingUserId && <button type="button" onClick={() => { setEditingUserId(null); setNewEmployeeName(''); setNewEmployeeCode(''); setNewEmployeeSubRole('prod'); }} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>}
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
+                  <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#e0f2fe', color: '#0369a1' }}><IconCamera size={22} /></div>
+                  <div>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">Équipe Production</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{prodCount}</p>
+                  </div>
                 </div>
-              </form>
-              <div style={styles.miniListArea} className="yalla-mini-list">
-                {(teamList || []).map(emp => {
-                  const isCM = emp.sub_role === 'cm';
-                  const accent = isCM ? '#be185d' : '#0369a1';
-                  const bg = isCM ? '#fce7f3' : '#e0f2fe';
-                  const initials = (emp.name || '?').trim().slice(0, 2).toUpperCase();
-                  return (
-                    <div
-                      key={emp.id}
-                      style={{ ...styles.miniListItem, ...(editingUserId === emp.id ? styles.miniListItemActive : {}) }}
-                      className="yalla-row-card"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                        <div style={{ ...styles.assigneeAvatar, backgroundColor: bg, color: accent, width: '34px', height: '34px', fontSize: '0.72rem' }}>{initials}</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
-                          <span style={{ fontSize: '0.96rem', color: '#1e293b', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.name}</span>
-                          <span style={{ fontSize: '0.7rem', fontWeight: '700', color: accent, letterSpacing: '0.03em' }}>
-                            {isCM ? 'COMMUNITY MANAGER' : 'PRODUCTION'}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-                        <code style={styles.premiumCodeBadge}>{emp.unique_code}</code>
-                        <button onClick={() => { setEditingUserId(emp.id); setNewEmployeeName(emp.name); setNewEmployeeCode(emp.unique_code); setNewEmployeeSubRole(emp.sub_role || 'prod'); }} style={{ ...styles.rowIconButton, color: '#64748b', display: 'flex' }} className="yalla-icon-btn"><IconEdit size={14} /></button>
-                        <button onClick={() => handleDeleteEmployee(emp.id)} style={{ ...styles.rowIconButton, color: '#dc2626', display: 'flex' }} className="yalla-icon-btn"><IconTrash size={14} /></button>
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
+                  <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#fce7f3', color: '#be185d' }}><IconTarget size={22} /></div>
+                  <div>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">Community Managers</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{cmCount}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.adminGridSplit}>
+                <div style={styles.premiumControlBlock} className="yalla-panel yalla-surface-flip">
+                  <h2 style={styles.blockTitle} className="yalla-text-flip">{editingUserId ? "Modifier le profil" : "Équipe & Codes Privés"}</h2>
+                  <form onSubmit={handleSaveEmployeeForm} style={styles.stackedForm}>
+                    <input type="text" placeholder="Nom complet" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeName} onChange={e => setNewEmployeeName(e.target.value)} required />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <select
+                        style={styles.premiumSelect}
+                        className="yalla-input-flip"
+                        value={newEmployeeSubRole}
+                        onChange={e => setNewEmployeeSubRole(e.target.value)}
+                      >
+                        <option value="prod">Production (Prod)</option>
+                        <option value="cm">Community Manager (CM)</option>
+                      </select>
+                      <div style={styles.actionInputGroup}>
+                        <input type="text" placeholder="Code d'accès" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeCode} onChange={e => setNewEmployeeCode(e.target.value)} required />
+                        <button type="button" onClick={handleAutoGenerateCode} style={styles.generateButton} className="yalla-icon-btn"><IconZap size={14} /></button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div style={styles.premiumControlBlock} className="yalla-panel">
-              <h2 style={styles.blockTitle}>{editingTaskId ? "Modifier le Shooting" : "Déployer un Nouveau Shooting"}</h2>
-              <form onSubmit={handleSaveTaskForm} style={styles.blockForm}>
-                <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} required />
-                <textarea placeholder="Instructions de prises de vue..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} />
-                <input type="date" style={styles.premiumInput} value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} min={todayISODate} required />
-                <select style={styles.premiumSelect} value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)} required>
-                  <option value="">-- Choisir l'opérateur photo --</option>
-                  {(teamList || []).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                </select>
-                <select style={styles.premiumSelect} value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}>
-                  <option value="Basse">Priorité basse</option>
-                  <option value="Normale">Priorité normale</option>
-                  <option value="Haute">Priorité haute</option>
-                  <option value="Urgente">Priorité urgente</option>
-                </select>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="submit" style={{ ...styles.premiumDeployButton, flex: 2, backgroundColor: editingTaskId ? '#d97706' : '#1e293b' }} className="yalla-primary-btn">
-                    {editingTaskId ? "Sauvegarder les modifications" : "Planifier la mission"}
-                  </button>
-                  {editingTaskId && <button type="button" onClick={cancelTaskEditing} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>}
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button type="submit" style={{ ...styles.premiumAddButton, flex: 2, backgroundColor: editingUserId ? '#d97706' : '#2b3e9a' }} className="yalla-primary-btn">
+                        {editingUserId ? "Sauvegarder" : "Enregistrer"}
+                      </button>
+                      {editingUserId && <button type="button" onClick={() => { setEditingUserId(null); setNewEmployeeName(''); setNewEmployeeCode(''); setNewEmployeeSubRole('prod'); }} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>}
+                    </div>
+                  </form>
+                  <div style={styles.miniListArea} className="yalla-mini-list">
+                    {(teamList || []).map(emp => {
+                      const isCM = emp.sub_role === 'cm';
+                      const accent = isCM ? '#be185d' : '#0369a1';
+                      const bg = isCM ? '#fce7f3' : '#e0f2fe';
+                      const initials = (emp.name || '?').trim().slice(0, 2).toUpperCase();
+                      return (
+                        <div
+                          key={emp.id}
+                          style={{ ...styles.miniListItem, ...(editingUserId === emp.id ? styles.miniListItemActive : {}) }}
+                          className="yalla-row-card yalla-row-flip"
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                            <div style={{ ...styles.assigneeAvatar, backgroundColor: bg, color: accent, width: '34px', height: '34px', fontSize: '0.72rem' }}>{initials}</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
+                              <span style={{ fontSize: '0.96rem', color: '#1e293b', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} className="yalla-text-flip">{emp.name}</span>
+                              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: accent, letterSpacing: '0.03em' }}>
+                                {isCM ? 'COMMUNITY MANAGER' : 'PRODUCTION'}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                            <code style={styles.premiumCodeBadge}>{emp.unique_code}</code>
+                            <button onClick={() => { setEditingUserId(emp.id); setNewEmployeeName(emp.name); setNewEmployeeCode(emp.unique_code); setNewEmployeeSubRole(emp.sub_role || 'prod'); }} style={{ ...styles.rowIconButton, color: '#64748b', display: 'flex' }} className="yalla-icon-btn"><IconEdit size={14} /></button>
+                            <button onClick={() => handleDeleteEmployee(emp.id)} style={{ ...styles.rowIconButton, color: '#dc2626', display: 'flex' }} className="yalla-icon-btn"><IconTrash size={14} /></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </form>
-            </div>
-          </div>
+
+                <div style={styles.premiumControlBlock} className="yalla-panel yalla-surface-flip">
+                  <h2 style={styles.blockTitle} className="yalla-text-flip">{editingTaskId ? "Modifier le Shooting" : "Déployer un Nouveau Shooting"}</h2>
+                  <form onSubmit={handleSaveTaskForm} style={styles.blockForm}>
+                    <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} className="yalla-input-flip" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} required />
+                    <textarea placeholder="Instructions de prises de vue..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} className="yalla-input-flip" value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} />
+                    <input type="date" style={styles.premiumInput} className="yalla-input-flip" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} min={todayISODate} required />
+                    <select style={styles.premiumSelect} className="yalla-input-flip" value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)} required>
+                      <option value="">-- Choisir l'opérateur photo --</option>
+                      {(teamList || []).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                    </select>
+                    <select style={styles.premiumSelect} className="yalla-input-flip" value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}>
+                      <option value="Basse">Priorité basse</option>
+                      <option value="Normale">Priorité normale</option>
+                      <option value="Haute">Priorité haute</option>
+                      <option value="Urgente">Priorité urgente</option>
+                    </select>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button type="submit" style={{ ...styles.premiumDeployButton, flex: 2, backgroundColor: editingTaskId ? '#d97706' : '#1e293b' }} className="yalla-primary-btn">
+                        {editingTaskId ? "Sauvegarder les modifications" : "Planifier la mission"}
+                      </button>
+                      {editingTaskId && <button type="button" onClick={cancelTaskEditing} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>}
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -898,8 +1098,8 @@ function App() {
         <div style={styles.adminLayout}>
           <div style={styles.dashHeader}>
             <div>
-              <h1 style={{ ...styles.mainHeading, display: 'flex', alignItems: 'center', gap: '10px' }}><IconLayers size={26} /> Suivi en Temps Réel des Shootings</h1>
-              <p style={styles.subHeading}>Vue consolidée de l'avancement de chaque collaborateur</p>
+              <h1 style={{ ...styles.mainHeading, display: 'flex', alignItems: 'center', gap: '10px' }} className="yalla-text-flip"><IconLayers size={26} /> Suivi en Temps Réel des Shootings</h1>
+              <p style={styles.subHeading} className="yalla-text-muted-flip">Vue consolidée de l'avancement de chaque collaborateur</p>
             </div>
           </div>
 
@@ -910,12 +1110,14 @@ function App() {
                 type="text"
                 placeholder="Rechercher un shooting ou un collaborateur..."
                 style={{ ...styles.pillInput, backgroundColor: '#fff' }}
+                className="yalla-input-flip"
                 value={trackingSearchQuery}
                 onChange={e => setTrackingSearchQuery(e.target.value)}
               />
             </div>
             <select
               style={{ ...styles.premiumSelect, width: 'auto', minWidth: '190px' }}
+              className="yalla-input-flip"
               value={trackingPriorityFilter}
               onChange={e => setTrackingPriorityFilter(e.target.value)}
             >
@@ -927,8 +1129,10 @@ function App() {
             </select>
           </div>
 
-          <div style={{ ...styles.premiumControlBlock, overflow: 'visible' }} className="yalla-panel">
-            {!tasks || tasks.length === 0 ? (
+          <div style={{ ...styles.premiumControlBlock, overflow: 'visible' }} className="yalla-panel yalla-surface-flip">
+            {loadingLedgers ? (
+              <SkeletonTaskList rows={4} />
+            ) : !tasks || tasks.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Aucune mission planifiée pour le moment.</div>
             ) : (
               <div style={styles.trackingGroupsGrid} className="yalla-tracking-grid">
@@ -944,10 +1148,10 @@ function App() {
                     return matchesSearch && matchesPriority;
                   });
                   return (
-                    <div key={group.key} style={styles.trackingGroupColumn}>
-                      <div style={styles.trackingGroupHeader}>
+                    <div key={group.key} style={styles.trackingGroupColumn} className="yalla-surface-flip">
+                      <div style={styles.trackingGroupHeader} className="yalla-divider-flip">
                         <span style={{ ...styles.trackingGroupDot, backgroundColor: group.accent }} />
-                        <h3 style={styles.trackingGroupTitle}>{group.label}</h3>
+                        <h3 style={styles.trackingGroupTitle} className="yalla-text-flip">{group.label}</h3>
                         <span style={{ ...styles.trackingGroupCount, backgroundColor: group.bg, color: group.accent }}>{groupTasks.length}</span>
                       </div>
 
@@ -966,13 +1170,13 @@ function App() {
                             const assigneeName = (t.assigned_to || '').replace(/\s*\((CM|PROD)\)\s*/i, '').trim();
                             const initials = assigneeName ? assigneeName.slice(0, 2).toUpperCase() : '?';
                             return (
-                              <div key={t.id} style={{ ...styles.ledgerCardContainer, overflow: 'visible', position: 'relative' }} className="yalla-row-card">
+                              <div key={t.id} style={{ ...styles.ledgerCardContainer, overflow: 'visible', position: 'relative' }} className="yalla-row-card yalla-row-flip">
                                 <div style={styles.ledgerRowMainBlock}>
                                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', minWidth: 0 }}>
                                     <div style={{ ...styles.assigneeAvatar, backgroundColor: group.bg, color: group.accent }}>{initials}</div>
                                     <div style={styles.ledgerLeft}>
-                                      <span style={styles.ledgerTaskTitle}>{t.title}</span>
-                                      <div style={{ display: 'flex', gap: '10px', fontSize: '0.82rem', color: '#64748b', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
+                                      <span style={styles.ledgerTaskTitle} className="yalla-text-flip">{t.title}</span>
+                                      <div style={{ display: 'flex', gap: '10px', fontSize: '0.82rem', color: '#64748b', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }} className="yalla-text-muted-flip">
                                         <span style={{ ...styles.assigneeNameBadge, backgroundColor: group.bg, color: group.accent }}>{assigneeName || 'Non assigné'}</span>
                                         {t.date && <span>· {t.date}</span>}
 
@@ -983,7 +1187,7 @@ function App() {
                                         )}
                                       </div>
                                       {t.description && (
-                                        <p style={styles.ledgerDescriptionText}>{t.description}</p>
+                                        <p style={styles.ledgerDescriptionText} className="yalla-text-muted-flip">{t.description}</p>
                                       )}
                                     </div>
                                   </div>
@@ -1003,7 +1207,7 @@ function App() {
                                         <IconMore size={16} />
                                       </button>
                                       {activeTaskMenuId === t.id && (
-                                        <div style={styles.dropdownPopupBox} onClick={(e) => e.stopPropagation()}>
+                                        <div style={styles.dropdownPopupBox} className="yalla-surface-flip-solid" onClick={(e) => e.stopPropagation()}>
                                           <button style={styles.dropdownActionItem} onClick={() => startEditingTask(t)}><IconEdit size={13} /> Modifier</button>
                                           <button style={{ ...styles.dropdownActionItem, color: '#dc2626' }} onClick={() => handleDeleteTask(t.id)}><IconTrash size={13} /> Supprimer</button>
                                         </div>
@@ -1014,7 +1218,7 @@ function App() {
 
                                 {t?.comments && t?.comments.length > 0 && (
                                   <div style={styles.adminLedgerCommentBubble}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.82rem', color: '#1e293b', marginBottom: '4px' }}><IconMessage size={13} /> Fil de discussion :</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.82rem', color: '#1e293b', marginBottom: '4px' }} className="yalla-text-flip"><IconMessage size={13} /> Fil de discussion :</div>
                                     {(t.comments || []).map(c => (
                                       <div
                                         key={c.id}
@@ -1022,13 +1226,13 @@ function App() {
                                         onMouseEnter={() => setHoveredCommentId(c.id)}
                                         onMouseLeave={() => setHoveredCommentId(null)}
                                       >
-                                        <span style={{ fontSize: '0.92rem', color: '#334155' }}><b style={{ color: '#94a3b8' }}>[{c.time}]</b> {c.text}</span>
+                                        <span style={{ fontSize: '0.92rem', color: '#334155' }} className="yalla-text-flip"><b style={{ color: '#94a3b8' }}>[{c.time}]</b> {c.text}</span>
 
                                         {hoveredCommentId === c.id && (
                                           <div style={styles.menuAnchorWrapper}>
                                             <button style={styles.threeDotsButton} className="yalla-icon-btn" onClick={(e) => { e.stopPropagation(); setActiveMenuCommentId(activeMenuCommentId === c.id ? null : c.id); }}><IconMore size={14} /></button>
                                             {activeMenuCommentId === c.id && (
-                                              <div style={styles.dropdownPopupBox}>
+                                              <div style={styles.dropdownPopupBox} className="yalla-surface-flip-solid">
                                                 <button style={{ ...styles.dropdownActionItem, color: '#dc2626' }} onClick={() => handleDeleteComment(c.id)}><IconTrash size={13} /> Supprimer</button>
                                               </div>
                                             )}
@@ -1055,9 +1259,9 @@ function App() {
               style={{ ...styles.modalOverlay, animation: 'yallaOverlayIn 0.18s ease' }}
               onClick={cancelTaskEditing}
             >
-              <div style={{ ...styles.modalCard, animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ ...styles.modalCard, animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} className="yalla-surface-flip-solid" onClick={(e) => e.stopPropagation()}>
                 <div style={styles.modalHeader}>
-                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }} className="yalla-text-flip">
                     <IconEdit size={16} /> Modifier le shooting
                   </h3>
                   <button type="button" onClick={cancelTaskEditing} style={styles.modalCloseBtn} className="yalla-icon-btn">
@@ -1065,14 +1269,14 @@ function App() {
                   </button>
                 </div>
                 <form onSubmit={handleSaveTaskForm} style={styles.blockForm}>
-                  <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} required />
-                  <textarea placeholder="Instructions de prises de vue..." style={{ ...styles.premiumInput, height: '90px', resize: 'none' }} value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} />
-                  <input type="date" style={styles.premiumInput} value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} min={todayISODate} required />
-                  <select style={styles.premiumSelect} value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)} required>
+                  <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} className="yalla-input-flip" value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} required />
+                  <textarea placeholder="Instructions de prises de vue..." style={{ ...styles.premiumInput, height: '90px', resize: 'none' }} className="yalla-input-flip" value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} />
+                  <input type="date" style={styles.premiumInput} className="yalla-input-flip" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} min={todayISODate} required />
+                  <select style={styles.premiumSelect} className="yalla-input-flip" value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)} required>
                     <option value="">-- Choisir l'opérateur photo --</option>
                     {(teamList || []).map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                   </select>
-                  <select style={styles.premiumSelect} value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}>
+                  <select style={styles.premiumSelect} className="yalla-input-flip" value={newTaskPriority} onChange={e => setNewTaskPriority(e.target.value)}>
                     <option value="Basse">Priorité basse</option>
                     <option value="Normale">Priorité normale</option>
                     <option value="Haute">Priorité haute</option>
@@ -1094,50 +1298,50 @@ function App() {
         <div style={styles.adminLayout}>
           <div style={styles.dashHeader}>
             <div>
-              <h1 style={{ ...styles.mainHeading, display: 'flex', alignItems: 'center', gap: '10px' }}><IconTarget size={26} /> Analytics</h1>
-              <p style={styles.subHeading}>Performance globale de la production en un coup d'œil</p>
+              <h1 style={{ ...styles.mainHeading, display: 'flex', alignItems: 'center', gap: '10px' }} className="yalla-text-flip"><IconTarget size={26} /> Analytics</h1>
+              <p style={styles.subHeading} className="yalla-text-muted-flip">Performance globale de la production en un coup d'œil</p>
             </div>
           </div>
 
           {!adminStats ? (
-            <div style={{ textAlign: 'center', color: '#64748b', padding: '40px' }}>Chargement des statistiques…</div>
+            <SkeletonAnalytics />
           ) : (
             <>
               <div style={styles.analyticsGrid} className="yalla-analytics-grid">
-                <div style={styles.analyticsCard}>
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
                   <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#eef2ff', color: '#4338ca' }}><IconBriefcase size={22} /></div>
                   <div>
-                    <p style={styles.analyticsLabel}>Missions totales</p>
-                    <p style={styles.analyticsValue}>{adminStats.total}</p>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">Missions totales</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{adminStats.total}</p>
                   </div>
                 </div>
-                <div style={styles.analyticsCard}>
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
                   <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#d1fae5', color: '#065f46' }}><IconCheck size={22} /></div>
                   <div>
-                    <p style={styles.analyticsLabel}>Taux de complétion</p>
-                    <p style={styles.analyticsValue}>{adminStats.completion_rate}%</p>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">Taux de complétion</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{adminStats.completion_rate}%</p>
                   </div>
                 </div>
-                <div style={styles.analyticsCard}>
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
                   <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#fef3c7', color: '#92400e' }}><IconClock size={22} /></div>
                   <div>
-                    <p style={styles.analyticsLabel}>En cours</p>
-                    <p style={styles.analyticsValue}>{adminStats.in_progress}</p>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">En cours</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{adminStats.in_progress}</p>
                   </div>
                 </div>
-                <div style={styles.analyticsCard}>
+                <div style={styles.analyticsCard} className="yalla-surface-flip">
                   <div style={{ ...styles.analyticsIconWrap, backgroundColor: '#fee2e2', color: '#b91c1c' }}><IconZap size={22} /></div>
                   <div>
-                    <p style={styles.analyticsLabel}>En retard</p>
-                    <p style={styles.analyticsValue}>{adminStats.overdue}</p>
+                    <p style={styles.analyticsLabel} className="yalla-text-muted-flip">En retard</p>
+                    <p style={styles.analyticsValue} className="yalla-text-flip">{adminStats.overdue}</p>
                   </div>
                 </div>
               </div>
 
               <div style={styles.adminGridSplit}>
                 {/* Completion donut */}
-                <div style={styles.premiumControlBlock} className="yalla-panel">
-                  <h2 style={styles.blockTitle}>Répartition des statuts</h2>
+                <div style={styles.premiumControlBlock} className="yalla-panel yalla-surface-flip">
+                  <h2 style={styles.blockTitle} className="yalla-text-flip">Répartition des statuts</h2>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '28px', flexWrap: 'wrap', padding: '10px 4px' }}>
                     {(() => {
                       const size = 150, stroke = 20, r = (size - stroke) / 2, c = 2 * Math.PI * r;
@@ -1171,13 +1375,13 @@ function App() {
                       );
                     })()}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }}><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} /> Terminé — {adminStats.completed}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }}><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }} /> En cours — {adminStats.in_progress}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }}><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#94a3b8', display: 'inline-block' }} /> En attente — {adminStats.pending}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }} className="yalla-text-flip"><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} /> Terminé — {adminStats.completed}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }} className="yalla-text-flip"><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }} /> En cours — {adminStats.in_progress}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.92rem' }} className="yalla-text-flip"><span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#94a3b8', display: 'inline-block' }} /> En attente — {adminStats.pending}</div>
                     </div>
                   </div>
 
-                  <h2 style={{ ...styles.blockTitle, marginTop: '18px' }}>Répartition par priorité</h2>
+                  <h2 style={{ ...styles.blockTitle, marginTop: '18px' }} className="yalla-text-flip">Répartition par priorité</h2>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {['Urgente', 'Haute', 'Normale', 'Basse'].map(p => {
                       const count = adminStats.priority_breakdown?.[p] || 0;
@@ -1189,7 +1393,7 @@ function App() {
                           <div style={{ flex: 1, height: '10px', borderRadius: '6px', backgroundColor: '#f1f5f9', overflow: 'hidden' }}>
                             <div style={{ width: `${pct}%`, height: '100%', backgroundColor: badge.color, borderRadius: '6px', transition: 'width 0.4s ease' }} />
                           </div>
-                          <span style={{ fontSize: '0.8rem', color: '#64748b', width: '34px', textAlign: 'right' }}>{count}</span>
+                          <span style={{ fontSize: '0.8rem', color: '#64748b', width: '34px', textAlign: 'right' }} className="yalla-text-muted-flip">{count}</span>
                         </div>
                       );
                     })}
@@ -1197,8 +1401,8 @@ function App() {
                 </div>
 
                 {/* Per-employee performance */}
-                <div style={styles.premiumControlBlock} className="yalla-panel">
-                  <h2 style={styles.blockTitle}>Performance par collaborateur</h2>
+                <div style={styles.premiumControlBlock} className="yalla-panel yalla-surface-flip">
+                  <h2 style={styles.blockTitle} className="yalla-text-flip">Performance par collaborateur</h2>
                   <div style={styles.miniListArea} className="yalla-mini-list">
                     {(adminStats.per_employee || []).length === 0 ? (
                       <div style={{ textAlign: 'center', color: '#94a3b8', padding: '18px', fontSize: '0.86rem' }}>Aucune donnée disponible.</div>
@@ -1209,16 +1413,16 @@ function App() {
                         const bg = isCM ? '#fce7f3' : '#e0f2fe';
                         const initials = (emp.name || '?').trim().slice(0, 2).toUpperCase();
                         return (
-                          <div key={emp.id} style={{ ...styles.miniListItem, alignItems: 'center' }} className="yalla-row-card">
+                          <div key={emp.id} style={{ ...styles.miniListItem, alignItems: 'center' }} className="yalla-row-card yalla-row-flip">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
                               <div style={{ ...styles.assigneeAvatar, backgroundColor: bg, color: accent, width: '34px', height: '34px', fontSize: '0.72rem' }}>{initials}</div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0, flex: 1 }}>
-                                <span style={{ fontSize: '0.92rem', color: '#1e293b', fontWeight: 700 }}>{emp.name}</span>
+                                <span style={{ fontSize: '0.92rem', color: '#1e293b', fontWeight: 700 }} className="yalla-text-flip">{emp.name}</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <div style={{ flex: 1, height: '8px', borderRadius: '5px', backgroundColor: '#f1f5f9', overflow: 'hidden', minWidth: '80px' }}>
                                     <div style={{ width: `${emp.completion_rate}%`, height: '100%', backgroundColor: accent, borderRadius: '5px' }} />
                                   </div>
-                                  <span style={{ fontSize: '0.76rem', color: '#64748b', whiteSpace: 'nowrap' }}>{emp.completed}/{emp.total} • {emp.completion_rate}%</span>
+                                  <span style={{ fontSize: '0.76rem', color: '#64748b', whiteSpace: 'nowrap' }} className="yalla-text-muted-flip">{emp.completed}/{emp.total} • {emp.completion_rate}%</span>
                                 </div>
                               </div>
                             </div>
@@ -1233,14 +1437,18 @@ function App() {
           )}
         </div>
       )}
+
+      <ConfirmDialog />
     </div>
   );
 }
 
 const styles = {
   backgroundWorkspace: { display: 'flex', justifyContent: 'center', width: '100vw', minHeight: '100vh', background: 'linear-gradient(180deg, #bce2f6 0%, #e3f0f8 40%, #f7fafd 75%, #ffffff 100%)', position: 'relative', boxSizing: 'border-box', fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
-  topNavigation: { position: 'fixed', top: '24px', right: '24px', zIndex: 1000 },
+  topNavigation: { position: 'fixed', top: '24px', right: '24px', zIndex: 1000, display: 'flex', gap: '10px' },
   ghostAdminButton: { display: 'flex', alignItems: 'center', gap: '7px', backgroundColor: 'rgba(255, 255, 255, 0.5)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.8)', color: '#1e293b', padding: '9px 18px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' },
+  themeToggleFloating: { display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.5)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.8)', color: '#1e293b', padding: '9px', borderRadius: '10px', cursor: 'pointer' },
+  themeToggleBtn: { display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 14px', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.08)', backgroundColor: 'rgba(248,250,252,0.9)', color: '#334155', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', marginTop: 'auto', marginBottom: '10px' },
   glassCard: { backgroundColor: 'rgba(255, 255, 255, 0.78)', backdropFilter: 'blur(20px)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.8)', boxShadow: '0 8px 16px rgba(15,23,42,0.04), 0 24px 60px rgba(15, 23, 42, 0.1)', width: '100%', maxWidth: '520px', padding: '48px 44px', boxSizing: 'border-box' },
   logoWrapper: { display: 'flex', justifyContent: 'center', marginBottom: '28px', minHeight: '130px' },
   brandLogo: { height: '130px', width: 'auto', objectFit: 'contain' },
@@ -1339,6 +1547,13 @@ const styles = {
   modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' },
   modalCloseBtn: { background: 'rgba(148,163,184,0.12)', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', color: '#64748b', display: 'flex' },
 
+  confirmModalCard: { backgroundColor: '#ffffff', borderRadius: '18px', padding: '28px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' },
+  confirmIconWrap: { width: '52px', height: '52px', borderRadius: '50%', backgroundColor: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' },
+  confirmTitle: { fontSize: '1.08rem', fontWeight: 800, color: '#1e293b', margin: '0 0 8px' },
+  confirmMessage: { fontSize: '0.9rem', color: '#64748b', margin: '0 0 22px', lineHeight: 1.5 },
+  confirmActions: { display: 'flex', gap: '10px', width: '100%' },
+  confirmDangerButton: { flex: 1, padding: '11px 16px', borderRadius: '10px', border: 'none', backgroundColor: '#dc2626', color: '#fff', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' },
+
   pillStatsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' },
   pillStatCard: { display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'rgba(255, 255, 255, 0.6)', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.8)', padding: '16px 20px', boxSizing: 'border-box' },
   pillStatDot: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
@@ -1362,7 +1577,7 @@ const styles = {
   sidebarNavGroup: { display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 },
   sidebarNavItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#475569', fontWeight: '600', fontSize: '0.88rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer', lineHeight: '1.25' },
   sidebarNavItemActive: { backgroundColor: 'rgba(43, 62, 154, 0.1)', color: '#2b3e9a' },
-  sidebarLogoutItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: '600', fontSize: '0.86rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer', marginTop: 'auto' }
+  sidebarLogoutItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: '600', fontSize: '0.86rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer' }
 };
 
 export default App;
