@@ -138,6 +138,11 @@ function useConfirmDialog() {
   return { confirm, ConfirmDialog };
 }
 
+/* ------------------------------------------------------------------ */
+/* Centralized API base — set VITE_API_URL in your .env for prod.     */
+/* ------------------------------------------------------------------ */
+const API_BASE = import.meta.env?.VITE_API_URL || 'http://127.0.0.1:5050';
+
 function App() {
   const [currentView, setCurrentView] = useState('login');
   const [currentUser, setCurrentUser] = useState(null);
@@ -155,73 +160,13 @@ function App() {
   // Loading flags for skeleton placeholders
   const [loadingTasks, setLoadingTasks] = useState(false);
 
-  // --- Daily schedule table (second employee view) ---
+  // --- Daily schedule view (second employee view) — reuses `tasks`,   ---
+  // --- the same list shown in "Mes Shootings", split into a single    ---
+  // --- morning/afternoon timeline instead of a separate data source.  ---
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const [employeeSubView, setEmployeeSubView] = useState('list'); // 'list' | 'schedule'
   const [scheduleDate, setScheduleDate] = useState(todayISO());
-  const [scheduleEntries, setScheduleEntries] = useState([]);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
-  const [scheduleError, setScheduleError] = useState('');
-  const [newEntryTitle, setNewEntryTitle] = useState('');
-  const [newEntryStart, setNewEntryStart] = useState('');
-  const [newEntryEnd, setNewEntryEnd] = useState('');
-  const WORK_SHIFTS = [
-    { key: 'morning', label: 'Matin', start: '08:30', end: '13:00' },
-    { key: 'afternoon', label: 'Après-midi', start: '14:00', end: '17:30' }
-  ];
 
-  const fetchScheduleEntries = async (userId, date) => {
-    setLoadingSchedule(true);
-    try {
-      const res = await fetch(`http://127.0.0.1:5050/api/schedule/${userId}?date=${date}`);
-      if (res.ok) {
-        const data = await res.json();
-        setScheduleEntries(Array.isArray(data) ? data : []);
-      }
-    } catch (err) { console.error(err); }
-    finally { setLoadingSchedule(false); }
-  };
-
-  const handleAddScheduleEntry = async (e) => {
-    e.preventDefault();
-    setScheduleError('');
-    if (!newEntryTitle.trim() || !newEntryStart || !newEntryEnd || !currentUser) return;
-    try {
-      const res = await fetch(`http://127.0.0.1:5050/api/schedule`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: currentUser.user_id,
-          date: scheduleDate,
-          start_time: newEntryStart,
-          end_time: newEntryEnd,
-          title: newEntryTitle.trim()
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setNewEntryTitle(''); setNewEntryStart(''); setNewEntryEnd('');
-        fetchScheduleEntries(currentUser.user_id, scheduleDate);
-      } else {
-        setScheduleError(data.message || "Impossible d'ajouter cette tâche.");
-      }
-    } catch (err) { setScheduleError("Erreur de connexion."); }
-  };
-
-  const handleDeleteScheduleEntry = async (id) => {
-    if (!currentUser) return;
-    try {
-      const res = await fetch(`http://127.0.0.1:5050/api/schedule/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchScheduleEntries(currentUser.user_id, scheduleDate);
-    } catch (err) { console.error(err); }
-  };
-
-  useEffect(() => {
-    if (currentUser?.user_id && currentView === 'employee_dashboard' && employeeSubView === 'schedule') {
-      fetchScheduleEntries(currentUser.user_id, scheduleDate);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, currentView, employeeSubView, scheduleDate]);
   const [loadingLedgers, setLoadingLedgers] = useState(false);
 
   // Dark mode
@@ -302,7 +247,7 @@ function App() {
     e.preventDefault();
     if (!uniqueCode) return;
     try {
-      const response = await fetch(`http://127.0.0.1:5050/api/verify/${uniqueCode}`);
+      const response = await fetch(`${API_BASE}/api/verify/${uniqueCode}`);
       const data = await response.json();
       if (response.ok) {
         setErrorMessage('');
@@ -316,7 +261,7 @@ function App() {
   const fetchEmployeeTasks = async (userId) => {
     setLoadingTasks(true);
     try {
-      const response = await fetch(`http://127.0.0.1:5050/api/tasks/${userId}`);
+      const response = await fetch(`${API_BASE}/api/tasks/${userId}`);
       if (response.ok) {
         const data = await response.json();
         setTasks(Array.isArray(data) ? data : []);
@@ -329,7 +274,7 @@ function App() {
     e.preventDefault();
     if (!newEmployeeTaskTitle || !newEmployeeTaskDate || !currentUser) return;
     try {
-      const res = await fetch('http://127.0.0.1:5050/api/tasks/employee-create', {
+      const res = await fetch(`${API_BASE}/api/tasks/employee-create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -359,7 +304,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/tasks/${taskId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/tasks/${taskId}`, { method: 'DELETE' });
       if (res.ok && currentUser) {
         fetchEmployeeTasks(currentUser.user_id);
       }
@@ -383,7 +328,7 @@ function App() {
 
   const handleUpdateTaskMetrics = async (taskId, updatedPayload) => {
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/tasks/${taskId}/metrics`, {
+      const res = await fetch(`${API_BASE}/api/tasks/${taskId}/metrics`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedPayload)
@@ -399,7 +344,7 @@ function App() {
     const textPayload = typedComments[taskId] || '';
     if (!textPayload.trim()) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/tasks/${taskId}/comment`, {
+      const res = await fetch(`${API_BASE}/api/tasks/${taskId}/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment: textPayload })
@@ -419,7 +364,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/comments/${commentId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/comments/${commentId}`, { method: 'DELETE' });
       if (res.ok) {
         if (currentView === 'admin_dashboard' || currentView === 'admin_tracking') fetchAdminDashboardLedgers();
         else if (currentUser) fetchEmployeeTasks(currentUser.user_id);
@@ -432,7 +377,7 @@ function App() {
     if (updatedText === null) return;
     if (!updatedText.trim()) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/comments/${commentId}`, {
+      const res = await fetch(`${API_BASE}/api/comments/${commentId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: updatedText })
@@ -445,7 +390,7 @@ function App() {
     e.preventDefault();
     if (!adminEmail || !adminPassword) return;
     try {
-      const response = await fetch('http://127.0.0.1:5050/api/admin/login', {
+      const response = await fetch(`${API_BASE}/api/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: adminEmail, password: adminPassword })
@@ -463,12 +408,12 @@ function App() {
   const fetchAdminDashboardLedgers = async () => {
     setLoadingLedgers(true);
     try {
-      const uRes = await fetch('http://127.0.0.1:5050/api/admin/users');
+      const uRes = await fetch(`${API_BASE}/api/admin/users`);
       if (uRes.ok) {
         const uData = await uRes.json();
         setTeamList(Array.isArray(uData) ? uData : []);
       }
-      const tRes = await fetch('http://127.0.0.1:5050/api/admin/tasks');
+      const tRes = await fetch(`${API_BASE}/api/admin/tasks`);
       if (tRes.ok) {
         const tData = await tRes.json();
         setTasks(Array.isArray(tData) ? tData : []);
@@ -479,7 +424,7 @@ function App() {
 
   const fetchAdminStats = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:5050/api/admin/stats');
+      const res = await fetch(`${API_BASE}/api/admin/stats`);
       if (res.ok) {
         const data = await res.json();
         setAdminStats(data);
@@ -496,7 +441,7 @@ function App() {
     e.preventDefault();
     if (!newEmployeeName || !newEmployeeCode) return;
     const isEditing = editingUserId !== null;
-    const endpoint = isEditing ? `http://127.0.0.1:5050/api/admin/users/${editingUserId}` : 'http://127.0.0.1:5050/api/admin/users';
+    const endpoint = isEditing ? `${API_BASE}/api/admin/users/${editingUserId}` : `${API_BASE}/api/admin/users`;
     try {
       const res = await fetch(endpoint, {
         method: isEditing ? 'PUT' : 'POST',
@@ -521,7 +466,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/admin/users/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE' });
       if (res.ok) { fetchAdminDashboardLedgers(); }
     } catch (err) { console.error(err); }
   };
@@ -530,7 +475,7 @@ function App() {
     e.preventDefault();
     if (!newTaskTitle || !selectedEmployeeId) return;
     const isEditingTask = editingTaskId !== null;
-    const endpoint = isEditingTask ? `http://127.0.0.1:5050/api/admin/tasks/${editingTaskId}` : 'http://127.0.0.1:5050/api/admin/tasks';
+    const endpoint = isEditingTask ? `${API_BASE}/api/admin/tasks/${editingTaskId}` : `${API_BASE}/api/admin/tasks`;
     try {
       const res = await fetch(endpoint, {
         method: isEditingTask ? 'PUT' : 'POST',
@@ -576,7 +521,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`http://127.0.0.1:5050/api/admin/tasks/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setEditingTaskId(null);
         setActiveTaskMenuId(null);
@@ -1111,98 +1056,70 @@ function App() {
                 />
               </div>
 
-              {/* Add-entry form */}
-              <form onSubmit={handleAddScheduleEntry} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '10px' }}>
-                <div style={{ flex: '2 1 220px' }}>
-                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Tâche</label>
-                  <input
-                    type="text"
-                    placeholder="Ex : Tournage story client X"
-                    value={newEntryTitle}
-                    onChange={(e) => setNewEntryTitle(e.target.value)}
-                    style={styles.formInput}
-                    className="yalla-input-flip"
-                    required
-                  />
-                </div>
-                <div style={{ flex: '1 1 120px' }}>
-                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Début</label>
-                  <input type="time" value={newEntryStart} onChange={(e) => setNewEntryStart(e.target.value)} style={styles.formInput} className="yalla-input-flip" required />
-                </div>
-                <div style={{ flex: '1 1 120px' }}>
-                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Fin</label>
-                  <input type="time" value={newEntryEnd} onChange={(e) => setNewEntryEnd(e.target.value)} style={styles.formInput} className="yalla-input-flip" required />
-                </div>
-                <button type="submit" style={{ ...styles.premiumAddButton, backgroundColor: '#2b3e9a', flex: '0 0 auto', padding: '13px 22px' }} className="yalla-primary-btn">
-                  <IconPlus size={15} /> Ajouter
-                </button>
-              </form>
-              <p style={{ fontSize: '0.78rem', margin: '0 0 6px 0' }} className="yalla-text-muted-flip">
-                Chaque tâche doit tenir entièrement dans un créneau : 08:30–13:00 ou 14:00–17:30.
+              <p style={{ fontSize: '0.8rem', margin: '0 0 16px 0' }} className="yalla-text-muted-flip">
+                Ce planning affiche automatiquement vos shootings du jour sélectionné (les mêmes que dans « Mes Shootings »), répartis selon leur heure de début.
               </p>
-              {scheduleError && (
-                <div style={{ ...styles.errorBanner, marginBottom: '14px' }}>{scheduleError}</div>
-              )}
 
-              <div style={{ height: '1px', margin: '18px 0' }} className="yalla-divider-flip" />
+              {(() => {
+                const dayTasks = (tasks || []).filter(t => t.date === scheduleDate);
+                const morning = dayTasks
+                  .filter(t => t.started_at && t.started_at < '13:00')
+                  .sort((a, b) => a.started_at.localeCompare(b.started_at));
+                const afternoon = dayTasks
+                  .filter(t => t.started_at && t.started_at >= '13:00')
+                  .sort((a, b) => a.started_at.localeCompare(b.started_at));
+                const unscheduled = dayTasks.filter(t => !t.started_at);
 
-              {loadingSchedule ? (
-                <div style={{ textAlign: 'center', padding: '30px' }} className="yalla-text-muted-flip">Chargement du planning...</div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }} className="yalla-schedule-grid">
-                {WORK_SHIFTS.map(shift => {
-                  const shiftEntries = scheduleEntries
-                    .filter(e => e.start_time >= shift.start && e.end_time <= shift.end)
-                    .sort((a, b) => a.start_time.localeCompare(b.start_time));
-                  return (
-                    <div key={shift.key} style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                        <span style={{
-                          fontSize: '0.78rem', fontWeight: '700', padding: '3px 10px', borderRadius: '999px',
-                          backgroundColor: shift.key === 'morning' ? '#e0f2fe' : '#fef3c7',
-                          color: shift.key === 'morning' ? '#0369a1' : '#92400e'
-                        }}>
-                          {shift.label} · {shift.start} – {shift.end}
-                        </span>
-                        <span style={{ fontSize: '0.78rem' }} className="yalla-text-muted-flip">
-                          {shiftEntries.length} tâche{shiftEntries.length !== 1 ? 's' : ''}
-                        </span>
+                const renderScheduleTask = (t) => (
+                  <div key={t.id} style={{ padding: '10px 14px', borderRadius: '10px', marginBottom: '8px' }} className="yalla-row-card yalla-row-flip">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: 'monospace', flexShrink: 0 }} className="yalla-text-flip">
+                        {t.started_at || '--:--'}{t.finished_at ? ` – ${t.finished_at}` : ''}
+                      </span>
+                      <span style={{ flex: 1, fontSize: '0.9rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
+                      <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
+                      <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
+                    </div>
+                  </div>
+                );
+
+                return (
+                  <div style={{
+                    border: '1px solid rgba(15,23,42,0.14)',
+                    borderRadius: '12px',
+                    overflow: 'hidden'
+                  }} className="yalla-divider-flip">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 18px', fontSize: '0.75rem', fontWeight: 700 }} className="yalla-text-muted-flip">
+                      <span>08:30</span><span>13:00</span><span>14:00</span><span>17:30</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 4px 1fr', minHeight: '220px' }} className="yalla-schedule-grid">
+                      <div style={{ padding: '16px' }}>
+                        {morning.length === 0
+                          ? <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem' }} className="yalla-text-muted-flip">Aucune tâche sur ce créneau.</div>
+                          : morning.map(renderScheduleTask)}
                       </div>
 
-                      {shiftEntries.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem', borderRadius: '10px' }} className="yalla-row-flip yalla-text-muted-flip">
-                          Aucune tâche enregistrée sur ce créneau.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {shiftEntries.map(entry => (
-                            <div
-                              key={entry.id}
-                              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '10px' }}
-                              className="yalla-row-card yalla-row-flip"
-                            >
-                              <span style={{
-                                fontSize: '0.8rem', fontWeight: '700', fontFamily: 'monospace', flexShrink: 0, width: '104px'
-                              }} className="yalla-text-flip">
-                                {entry.start_time} – {entry.end_time}
-                              </span>
-                              <span style={{ flex: 1, fontSize: '0.9rem' }} className="yalla-text-flip">{entry.title}</span>
-                              <button
-                                onClick={() => handleDeleteScheduleEntry(entry.id)}
-                                style={{ ...styles.rowIconButton, color: '#dc2626', display: 'flex' }}
-                                className="yalla-icon-btn"
-                              >
-                                <IconTrash size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <div style={{
+                        background: 'repeating-linear-gradient(180deg, rgba(148,163,184,0.4) 0, rgba(148,163,184,0.4) 6px, transparent 6px, transparent 12px)'
+                      }} />
+
+                      <div style={{ padding: '16px' }}>
+                        {afternoon.length === 0
+                          ? <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem' }} className="yalla-text-muted-flip">Aucune tâche sur ce créneau.</div>
+                          : afternoon.map(renderScheduleTask)}
+                      </div>
                     </div>
-                  );
-                })}
-                </div>
-              )}
+
+                    {unscheduled.length > 0 && (
+                      <div style={{ padding: '14px 18px', borderTop: '1px solid rgba(15,23,42,0.1)' }} className="yalla-divider-flip">
+                        <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 8px' }} className="yalla-text-muted-flip">Sans heure de début définie :</p>
+                        {unscheduled.map(renderScheduleTask)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
