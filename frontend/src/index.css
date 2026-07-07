@@ -1,0 +1,57 @@
+html {
+  /* Bumps every rem-based font-size in the app proportionally */
+  font-size: 17.5px;
+}
+
+:root {
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+body {
+  font-family: var(--font-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+}
+
+/* ---- Admin area interaction states (kept from the redesign) ---- */
+.yalla-input {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.yalla-input:focus {
+  border-color: #2b3e9a !important;
+  box-shadow: 0 0 0 3px rgba(43, 62, 154, 0.12);
+  outline: none;
+}
+
+.yalla-btn {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
+}
+.yalla-btn:hover {
+  transform: translateY(-1px);
+}
+.yalla-btn:active {
+  transform: translateY(0px);
+}
+
+.yalla-row {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.yalla-row:hover {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.yalla-list-scroll::-webkit-scrollbar { width: 6px; }
+.yalla-list-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 6px; }
+.yalla-list-scroll::-webkit-scrollbar-track { background: transparent; }
+
+@media (max-width: 860px) {
+  .yalla-grid-split { grid-template-columns: 1fr !important; }
+}

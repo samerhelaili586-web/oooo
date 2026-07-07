@@ -1,0 +1,404 @@
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+
+load_dotenv()
+
+app = Flask(__name__)
+
+# CORS: restrict to configured origin(s) in production; defaults to allow-all for local dev.
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS.split(',') if ALLOWED_ORIGINS != '*' else '*'}})
+
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+
+def ensure_priority_column():
+    """Add the 'priority' column to pre-existing SQLite databases that predate this field."""
+    try:
+        with db.engine.connect() as conn:
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(tasks)").fetchall()]
+            if 'priority' not in cols:
+                conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN priority VARCHAR(20) DEFAULT 'Normale'")
+                conn.commit()
+    except Exception:
+        pass
+
+
+def is_date_in_past(date_str):
+    """Reject dates strictly before today (format expected: YYYY-MM-DD, from <input type=date>)."""
+    if not date_str:
+        return False
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    return date_str < today_str
+
+# --- DATABASE MODELS ---
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    unique_code = db.Column(db.String(50), unique=True, nullable=True)
+    role = db.Column(db.String(20), default='employee')
+    sub_role = db.Column(db.String(20), default='prod')
+
+    email = db.Column(db.String(100), unique=True, nullable=True)
+    password = db.Column(db.String(100), nullable=True)
+
+    tasks = db.relationship('Task', backref='assigned_user', lazy=True)
+
+
+class Task(db.Model):
+    __tablename__ = 'tasks'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    date = db.Column(db.String(50), nullable=True)
+    status = db.Column(db.String(50), default='En attente')
+
+    started_at = db.Column(db.String(50), nullable=True)
+    finished_at = db.Column(db.String(50), nullable=True)
+    is_self_created = db.Column(db.Boolean, default=False)
+    priority = db.Column(db.String(20), default='Normale')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    comments = db.relationship('Comment', backref='associated_task', lazy=True, cascade="all, delete-orphan")
+
+
+class Comment(db.Model):
+    __tablename__ = 'comments'
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.String(50), default=lambda: datetime.now().strftime("%H:%M"))
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
+
+
+# --- SEED HELPERS ---
+def seed_initial_accounts():
+    """Pre-seed test accounts so the tables compile smoothly on first init."""
+    if not User.query.filter_by(unique_code='789').first():
+        db.session.add(User(
+            name="Sami Prod",
+            unique_code="789",
+            role="employee",
+            sub_role="prod"
+        ))
+    if not User.query.filter_by(unique_code='123').first():
+        db.session.add(User(
+            name="Hana CM",
+            unique_code="123",
+            role="employee",
+            sub_role="cm"
+        ))
+    if not User.query.filter_by(email='admin@yalla.com').first():
+        default_admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'yalla')
+        db.session.add(User(
+            name="Direction Générale",
+            role="admin",
+            email="admin@yalla.com",
+            password=generate_password_hash(default_admin_password)
+        ))
+    db.session.commit()
+
+
+# --- API ROUTES ---
+@app.route('/api/verify/<string:code>', methods=['GET'])
+def verify_code(code):
+    user = User.query.filter_by(unique_code=code, role='employee').first()
+    if user:
+        return jsonify({
+            "status": "success",
+            "role": user.role,
+            "sub_role": user.sub_role,
+            "user_id": user.id,
+            "name": user.name
+        }), 200
+    return jsonify({"status": "error", "message": "Code unique incorrect."}), 404
+
+
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    data = request.json or {}
+    email = data.get('email')
+    password = data.get('password') or ''
+    admin = User.query.filter_by(email=email, role='admin').first()
+
+    if not admin or not admin.password:
+        return jsonify({"status": "error", "message": "Identifiants administratifs incorrects."}), 401
+
+    # Werkzeug hashes always contain a ':' separator (e.g. "pbkdf2:sha256:..."). Anything
+    # else is a legacy plaintext password from before hashing was added — migrate it
+    # transparently on successful login instead of locking existing accounts out.
+    is_hashed = ':' in admin.password
+    if is_hashed:
+        valid = check_password_hash(admin.password, password)
+    else:
+        valid = admin.password == password
+        if valid:
+            admin.password = generate_password_hash(password)
+            db.session.commit()
+
+    if valid:
+        return jsonify({"status": "success", "role": "admin", "name": admin.name}), 200
+    return jsonify({"status": "error", "message": "Identifiants administratifs incorrects."}), 401
+
+
+@app.route('/api/tasks/<int:user_id>', methods=['GET'])
+def get_user_tasks(user_id):
+    tasks = Task.query.filter_by(assigned_to_id=user_id).all()
+    output = []
+    for t in tasks:
+        output.append({
+            "id": t.id,
+            "title": t.title,
+            "description": t.description if t.description else "",
+            "status": t.status,
+            "date": t.date if t.date else "",
+            "started_at": getattr(t, 'started_at', "") or "",
+            "finished_at": getattr(t, 'finished_at', "") or "",
+            "is_self_created": getattr(t, 'is_self_created', False),
+            "priority": getattr(t, 'priority', None) or 'Normale',
+            "comments": [{"id": c.id, "text": c.text, "time": c.timestamp} for c in t.comments]
+        })
+    return jsonify(output), 200
+
+
+@app.route('/api/tasks/employee-create', methods=['POST'])
+def employee_create_task():
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({"status": "error", "message": "Le titre est requis."}), 400
+    try:
+        user_id = int(data.get('user_id'))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Utilisateur invalide."}), 400
+    if not User.query.get(user_id):
+        return jsonify({"status": "error", "message": "Utilisateur introuvable."}), 404
+    if is_date_in_past(data.get('date')):
+        return jsonify({"status": "error", "message": "La date ne peut pas être antérieure à aujourd'hui."}), 400
+
+    new_task = Task(
+        title=title,
+        description=data.get('description'),
+        date=data.get('date'),
+        assigned_to_id=user_id,
+        status="En attente",
+        started_at="",
+        finished_at="",
+        is_self_created=True,
+        priority=data.get('priority') or 'Normale'
+    )
+    db.session.add(new_task)
+    db.session.commit()
+    return jsonify({"status": "success"}), 201
+
+
+@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
+def employee_delete_task(task_id):
+    task = Task.query.get_or_404(task_id)
+    db.session.delete(task)
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/tasks/<int:task_id>/metrics', methods=['PUT'])
+def update_task_metrics(task_id):
+    task = Task.query.get_or_404(task_id)
+    data = request.json or {}
+    if 'status' in data: task.status = data.get('status')
+    if 'started_at' in data: task.started_at = data.get('started_at')
+    if 'finished_at' in data: task.finished_at = data.get('finished_at')
+    if 'priority' in data: task.priority = data.get('priority')
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/tasks/<int:task_id>/comment', methods=['POST'])
+def add_task_comment(task_id):
+    task = Task.query.get_or_404(task_id)
+    data = request.json or {}
+    comment_text = data.get('comment', '').strip()
+    if not comment_text: return jsonify({"status": "error"}), 400
+    new_comment = Comment(text=comment_text, task_id=task.id)
+    db.session.add(new_comment)
+    db.session.commit()
+    return jsonify({"status": "success"}), 201
+
+
+@app.route('/api/comments/<int:comment_id>', methods=['PUT', 'DELETE'])
+def handle_comment_actions(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    if request.method == 'DELETE':
+        db.session.delete(comment)
+    elif request.method == 'PUT':
+        comment.text = (request.json or {}).get('text', comment.text)
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/admin/users', methods=['GET', 'POST'])
+def handle_admin_users():
+    if request.method == 'POST':
+        data = request.json or {}
+        name = (data.get('name') or '').strip()
+        unique_code = (data.get('unique_code') or '').strip()
+        if not name or not unique_code:
+            return jsonify({"status": "error", "message": "Le nom et le code d'accès sont requis."}), 400
+        if User.query.filter_by(unique_code=unique_code).first():
+            return jsonify({"status": "error", "message": "Code déjà utilisé"}), 400
+        db.session.add(User(
+            name=name,
+            unique_code=unique_code,
+            sub_role=data.get('sub_role', 'prod'),
+            role='employee'
+        ))
+        db.session.commit()
+        return jsonify({"status": "success"}), 201
+    employees = User.query.filter_by(role='employee').all()
+    return jsonify([{"id": u.id, "name": u.name, "unique_code": u.unique_code, "sub_role": u.sub_role} for u in employees]), 200
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT', 'DELETE'])
+def update_or_delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if request.method == 'DELETE':
+        # Loop through and delete tasks cleanly to trigger cascade handlers on child comments,
+        # preventing SQLite ForeignKeyConstraint / IntegrityError exceptions.
+        user_tasks = Task.query.filter_by(assigned_to_id=user_id).all()
+        for t in user_tasks:
+            db.session.delete(t)
+        db.session.delete(user)
+    elif request.method == 'PUT':
+        data = request.json or {}
+        user.name = data.get('name')
+        user.unique_code = data.get('unique_code')
+        user.sub_role = data.get('sub_role', 'prod')
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/admin/tasks', methods=['GET', 'POST'])
+def handle_admin_tasks():
+    if request.method == 'POST':
+        data = request.json or {}
+        title = (data.get('title') or '').strip()
+        if not title:
+            return jsonify({"status": "error", "message": "Le titre est requis."}), 400
+        try:
+            assigned_to_id = int(data.get('assigned_to_id'))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "Opérateur invalide."}), 400
+        if not User.query.get(assigned_to_id):
+            return jsonify({"status": "error", "message": "Opérateur introuvable."}), 404
+        if is_date_in_past(data.get('date')):
+            return jsonify({"status": "error", "message": "La date ne peut pas être antérieure à aujourd'hui."}), 400
+
+        db.session.add(Task(
+            title=title,
+            description=data.get('description'),
+            date=data.get('date'),
+            assigned_to_id=assigned_to_id,
+            is_self_created=False,
+            priority=data.get('priority') or 'Normale'
+        ))
+        db.session.commit()
+        return jsonify({"status": "success"}), 201
+    all_tasks = Task.query.all()
+    return jsonify([{
+        "id": t.id, "title": t.title, "description": t.description, "status": t.status, "date": t.date,
+        "started_at": getattr(t, 'started_at', "") or "", "finished_at": getattr(t, 'finished_at', "") or "",
+        "priority": getattr(t, 'priority', None) or 'Normale',
+        "comments": [{"id": c.id, "text": c.text, "time": c.timestamp} for c in t.comments],
+        "assigned_to_id": t.assigned_to_id,
+        "assigned_to": f"{t.assigned_user.name} ({t.assigned_user.sub_role.upper()})" if t.assigned_user else "Inconnu"
+    } for t in all_tasks]), 200
+
+
+@app.route('/api/admin/tasks/<int:task_id>', methods=['PUT', 'DELETE'])
+def update_or_delete_task(task_id):
+    task = Task.query.get_or_404(task_id)
+    if request.method == 'DELETE':
+        db.session.delete(task)
+    elif request.method == 'PUT':
+        data = request.json or {}
+        title = (data.get('title') or '').strip()
+        if not title:
+            return jsonify({"status": "error", "message": "Le titre est requis."}), 400
+        try:
+            assigned_to_id = int(data.get('assigned_to_id'))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "Opérateur invalide."}), 400
+        if not User.query.get(assigned_to_id):
+            return jsonify({"status": "error", "message": "Opérateur introuvable."}), 404
+
+        task.title = title
+        task.description = data.get('description')
+        task.date = data.get('date')
+        task.assigned_to_id = assigned_to_id
+        if 'priority' in data: task.priority = data.get('priority') or 'Normale'
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/admin/stats', methods=['GET'])
+def get_admin_stats():
+    """Aggregate analytics used by the new Analytics dashboard tab."""
+    all_tasks = Task.query.all()
+    today_str = datetime.now().strftime('%Y-%m-%d')
+
+    total = len(all_tasks)
+    completed = sum(1 for t in all_tasks if t.status == 'Terminé')
+    in_progress = sum(1 for t in all_tasks if t.status == 'En cours')
+    pending = sum(1 for t in all_tasks if t.status == 'En attente')
+    overdue = sum(1 for t in all_tasks if t.date and t.date < today_str and t.status != 'Terminé')
+
+    priority_breakdown = {}
+    for t in all_tasks:
+        p = getattr(t, 'priority', None) or 'Normale'
+        priority_breakdown[p] = priority_breakdown.get(p, 0) + 1
+
+    per_employee = []
+    employees = User.query.filter_by(role='employee').all()
+    for u in employees:
+        u_tasks = [t for t in all_tasks if t.assigned_to_id == u.id]
+        u_completed = sum(1 for t in u_tasks if t.status == 'Terminé')
+        per_employee.append({
+            "id": u.id,
+            "name": u.name,
+            "sub_role": u.sub_role,
+            "total": len(u_tasks),
+            "completed": u_completed,
+            "completion_rate": round((u_completed / len(u_tasks)) * 100) if u_tasks else 0
+        })
+
+    completion_rate = round((completed / total) * 100) if total else 0
+
+    return jsonify({
+        "total": total,
+        "completed": completed,
+        "in_progress": in_progress,
+        "pending": pending,
+        "overdue": overdue,
+        "completion_rate": completion_rate,
+        "priority_breakdown": priority_breakdown,
+        "per_employee": per_employee
+    }), 200
+
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+        ensure_priority_column()
+        seed_initial_accounts()
+    debug_mode = os.environ.get('FLASK_DEBUG', 'True') == 'True'
+    port = int(os.environ.get('PORT', 5050))
+    app.run(debug=debug_mode, port=port)
