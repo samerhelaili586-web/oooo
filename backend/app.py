@@ -81,6 +81,20 @@ class Comment(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
 
 
+class ScheduleEntry(db.Model):
+    """A single logged task within one of the day's two work shifts
+    (08:30-13:00 morning / 14:00-17:30 afternoon), used by the employee's
+    daily planning table."""
+    __tablename__ = 'schedule_entries'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    date = db.Column(db.String(20), nullable=False)         # 'YYYY-MM-DD'
+    start_time = db.Column(db.String(5), nullable=False)    # 'HH:MM' 24h
+    end_time = db.Column(db.String(5), nullable=False)      # 'HH:MM' 24h
+    title = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 # --- SEED HELPERS ---
 def seed_initial_accounts():
     """Pre-seed test accounts so the tables compile smoothly on first init."""
@@ -206,6 +220,85 @@ def employee_create_task():
 def employee_delete_task(task_id):
     task = Task.query.get_or_404(task_id)
     db.session.delete(task)
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+# --- Daily schedule table (two work shifts: 08:30-13:00 / 14:00-17:30) ---
+SHIFTS = [("08:30", "13:00"), ("14:00", "17:30")]
+
+
+def _time_to_minutes(hhmm):
+    h, m = hhmm.split(':')
+    return int(h) * 60 + int(m)
+
+
+def _entry_shift_violation(start_time, end_time):
+    """Returns an error message if the entry isn't valid or doesn't fit
+    entirely inside one of the two work shifts, else None."""
+    try:
+        start_m, end_m = _time_to_minutes(start_time), _time_to_minutes(end_time)
+    except (ValueError, AttributeError):
+        return "Heures invalides."
+    if end_m <= start_m:
+        return "L'heure de fin doit être après l'heure de début."
+    for shift_start, shift_end in SHIFTS:
+        if _time_to_minutes(shift_start) <= start_m and end_m <= _time_to_minutes(shift_end):
+            return None
+    return "La tâche doit être entièrement comprise dans un créneau : 08:30–13:00 ou 14:00–17:30."
+
+
+@app.route('/api/schedule/<int:user_id>', methods=['GET'])
+def get_schedule_entries(user_id):
+    date = request.args.get('date')
+    if not date:
+        return jsonify({"status": "error", "message": "Le paramètre date est requis."}), 400
+    entries = ScheduleEntry.query.filter_by(user_id=user_id, date=date).order_by(ScheduleEntry.start_time.asc()).all()
+    return jsonify([{
+        "id": e.id, "date": e.date, "start_time": e.start_time, "end_time": e.end_time, "title": e.title
+    } for e in entries]), 200
+
+
+@app.route('/api/schedule', methods=['POST'])
+def create_schedule_entry():
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    date = data.get('date')
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+
+    if not title:
+        return jsonify({"status": "error", "message": "La description de la tâche est requise."}), 400
+    if not date:
+        return jsonify({"status": "error", "message": "La date est requise."}), 400
+    try:
+        user_id = int(data.get('user_id'))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Utilisateur invalide."}), 400
+    if not User.query.get(user_id):
+        return jsonify({"status": "error", "message": "Utilisateur introuvable."}), 404
+
+    violation = _entry_shift_violation(start_time, end_time)
+    if violation:
+        return jsonify({"status": "error", "message": violation}), 400
+
+    # Prevent overlapping entries for the same user/day.
+    new_start, new_end = _time_to_minutes(start_time), _time_to_minutes(end_time)
+    for e in ScheduleEntry.query.filter_by(user_id=user_id, date=date).all():
+        e_start, e_end = _time_to_minutes(e.start_time), _time_to_minutes(e.end_time)
+        if new_start < e_end and e_start < new_end:
+            return jsonify({"status": "error", "message": f"Chevauchement avec « {e.title} » ({e.start_time}–{e.end_time})."}), 409
+
+    entry = ScheduleEntry(user_id=user_id, date=date, start_time=start_time, end_time=end_time, title=title)
+    db.session.add(entry)
+    db.session.commit()
+    return jsonify({"status": "success", "id": entry.id}), 201
+
+
+@app.route('/api/schedule/<int:entry_id>', methods=['DELETE'])
+def delete_schedule_entry(entry_id):
+    entry = ScheduleEntry.query.get_or_404(entry_id)
+    db.session.delete(entry)
     db.session.commit()
     return jsonify({"status": "success"}), 200
 

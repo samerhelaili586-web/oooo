@@ -154,6 +154,74 @@ function App() {
 
   // Loading flags for skeleton placeholders
   const [loadingTasks, setLoadingTasks] = useState(false);
+
+  // --- Daily schedule table (second employee view) ---
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const [employeeSubView, setEmployeeSubView] = useState('list'); // 'list' | 'schedule'
+  const [scheduleDate, setScheduleDate] = useState(todayISO());
+  const [scheduleEntries, setScheduleEntries] = useState([]);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
+  const [newEntryTitle, setNewEntryTitle] = useState('');
+  const [newEntryStart, setNewEntryStart] = useState('');
+  const [newEntryEnd, setNewEntryEnd] = useState('');
+  const WORK_SHIFTS = [
+    { key: 'morning', label: 'Matin', start: '08:30', end: '13:00' },
+    { key: 'afternoon', label: 'Après-midi', start: '14:00', end: '17:30' }
+  ];
+
+  const fetchScheduleEntries = async (userId, date) => {
+    setLoadingSchedule(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:5050/api/schedule/${userId}?date=${date}`);
+      if (res.ok) {
+        const data = await res.json();
+        setScheduleEntries(Array.isArray(data) ? data : []);
+      }
+    } catch (err) { console.error(err); }
+    finally { setLoadingSchedule(false); }
+  };
+
+  const handleAddScheduleEntry = async (e) => {
+    e.preventDefault();
+    setScheduleError('');
+    if (!newEntryTitle.trim() || !newEntryStart || !newEntryEnd || !currentUser) return;
+    try {
+      const res = await fetch(`http://127.0.0.1:5050/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUser.user_id,
+          date: scheduleDate,
+          start_time: newEntryStart,
+          end_time: newEntryEnd,
+          title: newEntryTitle.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNewEntryTitle(''); setNewEntryStart(''); setNewEntryEnd('');
+        fetchScheduleEntries(currentUser.user_id, scheduleDate);
+      } else {
+        setScheduleError(data.message || "Impossible d'ajouter cette tâche.");
+      }
+    } catch (err) { setScheduleError("Erreur de connexion."); }
+  };
+
+  const handleDeleteScheduleEntry = async (id) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`http://127.0.0.1:5050/api/schedule/${id}`, { method: 'DELETE' });
+      if (res.ok) fetchScheduleEntries(currentUser.user_id, scheduleDate);
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => {
+    if (currentUser?.user_id && currentView === 'employee_dashboard' && employeeSubView === 'schedule') {
+      fetchScheduleEntries(currentUser.user_id, scheduleDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, currentView, employeeSubView, scheduleDate]);
   const [loadingLedgers, setLoadingLedgers] = useState(false);
 
   // Dark mode
@@ -533,7 +601,16 @@ function App() {
   };
 
   // --- Status badge helper: desaturated, professional corporate palette ---
+  const getOverdueBadgeStyle = () => theme === 'dark'
+    ? { backgroundColor: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.35)' }
+    : { backgroundColor: '#fee2e2', color: '#b91c1c' };
+
   const getStatusBadgeStyle = (status) => {
+    if (theme === 'dark') {
+      if (status === 'Terminé') return { backgroundColor: 'rgba(16,185,129,0.16)', color: '#6ee7b7', border: '1px solid rgba(16,185,129,0.3)' };
+      if (status === 'En cours') return { backgroundColor: 'rgba(245,158,11,0.16)', color: '#fcd34d', border: '1px solid rgba(245,158,11,0.3)' };
+      return { backgroundColor: 'rgba(148,163,184,0.14)', color: '#cbd5e1', border: '1px solid rgba(148,163,184,0.25)' }; // En attente
+    }
     if (status === 'Terminé') return { backgroundColor: '#d1fae5', color: '#065f46' };
     if (status === 'En cours') return { backgroundColor: '#fef3c7', color: '#92400e' };
     return { backgroundColor: '#f1f5f9', color: '#475569' }; // En attente
@@ -541,6 +618,12 @@ function App() {
 
   // --- Priority badge helper: color-coded urgency scale ---
   const getPriorityBadgeStyle = (priority) => {
+    if (theme === 'dark') {
+      if (priority === 'Urgente') return { backgroundColor: 'rgba(239,68,68,0.16)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' };
+      if (priority === 'Haute') return { backgroundColor: 'rgba(249,115,22,0.16)', color: '#fdba74', border: '1px solid rgba(249,115,22,0.3)' };
+      if (priority === 'Basse') return { backgroundColor: 'rgba(16,185,129,0.16)', color: '#6ee7b7', border: '1px solid rgba(16,185,129,0.3)' };
+      return { backgroundColor: 'rgba(99,102,241,0.16)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }; // Normale
+    }
     if (priority === 'Urgente') return { backgroundColor: '#fee2e2', color: '#b91c1c' };
     if (priority === 'Haute') return { backgroundColor: '#ffedd5', color: '#c2410c' };
     if (priority === 'Basse') return { backgroundColor: '#ecfdf5', color: '#047857' };
@@ -566,7 +649,7 @@ function App() {
       alignItems: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? 'flex-start' : 'center',
       padding: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? '40px 20px' : '0px',
       paddingLeft: (currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? '272px' : (currentView.includes('dashboard') ? '20px' : '0px')
-    }}>
+    }} className="yalla-bg-flip">
       <style>{`
         html, body { margin:0; padding:0; width:100%; min-height:100%; font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
         * { box-sizing: border-box; }
@@ -615,6 +698,10 @@ function App() {
         .yalla-ledger-area > div:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,0.08) !important; }
         .yalla-tracking-grid .yalla-panel:hover { box-shadow: none !important; }
 
+        @media (max-width: 760px) {
+          .yalla-schedule-grid { grid-template-columns: 1fr !important; }
+        }
+
         /* Custom slim scrollbars */
         .yalla-mini-list, .yalla-ledger-area {
           scrollbar-width: thin;
@@ -652,6 +739,15 @@ function App() {
         [data-yalla-theme="dark"] .yalla-row-flip { background-color: rgba(15,23,42,0.45) !important; border-color: rgba(255,255,255,0.06) !important; }
         [data-yalla-theme="dark"] .yalla-divider-flip { background-color: rgba(255,255,255,0.08) !important; }
         [data-yalla-theme="dark"] .yalla-skeleton { background: linear-gradient(90deg, #1e293b 25%, #2a374c 37%, #1e293b 63%); background-size: 400% 100%; }
+        [data-yalla-theme="dark"] .yalla-icon-btn:hover:not(:disabled) { background-color: rgba(255,255,255,0.08); color: #f1f5f9 !important; filter: none; }
+
+        /* On-brand keyboard focus ring, replacing the browser's default
+           blue outline (which is what was showing up on the logout button). */
+        button:focus-visible, a:focus-visible, [role="button"]:focus-visible, select:focus-visible {
+          outline: 2.5px solid #C44421;
+          outline-offset: 2px;
+          text-decoration: none;
+        }
         [data-yalla-theme="dark"] .yalla-sidebar-flip { background-color: rgba(15, 23, 42, 0.7) !important; border-color: rgba(255,255,255,0.06) !important; }
       `}</style>
 
@@ -759,6 +855,16 @@ function App() {
           <div style={styles.dashHeader}>
             <div>
               <h1 style={styles.mainHeading} className="yalla-text-flip">Bonjour, {currentUser?.name}</h1>
+              <div style={{ marginTop: '8px' }}>
+                <span style={{
+                  fontSize: '0.85rem', fontWeight: '700', padding: '4px 12px', borderRadius: '999px', display: 'inline-block',
+                  ...(currentUser?.sub_role === 'cm'
+                    ? { backgroundColor: '#fce7f3', color: '#be185d' }
+                    : { backgroundColor: '#e0f2fe', color: '#0369a1' })
+                }}>
+                  {currentUser?.sub_role === 'cm' ? 'Community Manager' : 'Production'}
+                </span>
+              </div>
               <p style={styles.subHeading} className="yalla-text-muted-flip">Gérez vos horaires et créez vos propres missions</p>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -788,6 +894,32 @@ function App() {
             </div>
           </div>
 
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '22px' }}>
+            <button
+              type="button"
+              onClick={() => setEmployeeSubView('list')}
+              style={{
+                ...styles.viewTabButton,
+                ...(employeeSubView === 'list' ? styles.viewTabButtonActive : {})
+              }}
+              className={employeeSubView === 'list' ? 'yalla-primary-btn' : 'yalla-surface-flip yalla-text-muted-flip'}
+            >
+              <IconLayers size={15} /> Mes Shootings
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmployeeSubView('schedule')}
+              style={{
+                ...styles.viewTabButton,
+                ...(employeeSubView === 'schedule' ? styles.viewTabButtonActive : {})
+              }}
+              className={employeeSubView === 'schedule' ? 'yalla-primary-btn' : 'yalla-surface-flip yalla-text-muted-flip'}
+            >
+              <IconClock size={15} /> Planning du Jour
+            </button>
+          </div>
+
+          {employeeSubView === 'list' && (<>
           <button
             type="button"
             onClick={() => setShowCreateShootingModal(true)}
@@ -851,7 +983,7 @@ function App() {
                         <h3 style={styles.userTaskTitleText} className="yalla-text-flip">{t.title}</h3>
                         <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
                         {isTaskOverdue(t) && (
-                          <span style={{ ...styles.statusBadge, backgroundColor: '#fee2e2', color: '#b91c1c', fontSize: '0.7rem', padding: '3px 9px' }}>En retard</span>
+                          <span style={{ ...styles.statusBadge, ...getOverdueBadgeStyle(), fontSize: '0.7rem', padding: '3px 9px' }}>En retard</span>
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -962,6 +1094,117 @@ function App() {
               })
             )}
           </div>
+          </>)}
+
+          {employeeSubView === 'schedule' && (
+            <div style={styles.premiumUserCard} className="yalla-surface-flip">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+                <h2 style={{ ...styles.userTaskTitleText, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }} className="yalla-text-flip">
+                  <IconClock size={18} /> Planning du {scheduleDate}
+                </h2>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  style={{ ...styles.formInput, width: 'auto', margin: 0 }}
+                  className="yalla-input-flip"
+                />
+              </div>
+
+              {/* Add-entry form */}
+              <form onSubmit={handleAddScheduleEntry} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '10px' }}>
+                <div style={{ flex: '2 1 220px' }}>
+                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Tâche</label>
+                  <input
+                    type="text"
+                    placeholder="Ex : Tournage story client X"
+                    value={newEntryTitle}
+                    onChange={(e) => setNewEntryTitle(e.target.value)}
+                    style={styles.formInput}
+                    className="yalla-input-flip"
+                    required
+                  />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Début</label>
+                  <input type="time" value={newEntryStart} onChange={(e) => setNewEntryStart(e.target.value)} style={styles.formInput} className="yalla-input-flip" required />
+                </div>
+                <div style={{ flex: '1 1 120px' }}>
+                  <label style={styles.fieldInputLabel} className="yalla-text-muted-flip">Fin</label>
+                  <input type="time" value={newEntryEnd} onChange={(e) => setNewEntryEnd(e.target.value)} style={styles.formInput} className="yalla-input-flip" required />
+                </div>
+                <button type="submit" style={{ ...styles.premiumAddButton, backgroundColor: '#2b3e9a', flex: '0 0 auto', padding: '13px 22px' }} className="yalla-primary-btn">
+                  <IconPlus size={15} /> Ajouter
+                </button>
+              </form>
+              <p style={{ fontSize: '0.78rem', margin: '0 0 6px 0' }} className="yalla-text-muted-flip">
+                Chaque tâche doit tenir entièrement dans un créneau : 08:30–13:00 ou 14:00–17:30.
+              </p>
+              {scheduleError && (
+                <div style={{ ...styles.errorBanner, marginBottom: '14px' }}>{scheduleError}</div>
+              )}
+
+              <div style={{ height: '1px', margin: '18px 0' }} className="yalla-divider-flip" />
+
+              {loadingSchedule ? (
+                <div style={{ textAlign: 'center', padding: '30px' }} className="yalla-text-muted-flip">Chargement du planning...</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }} className="yalla-schedule-grid">
+                {WORK_SHIFTS.map(shift => {
+                  const shiftEntries = scheduleEntries
+                    .filter(e => e.start_time >= shift.start && e.end_time <= shift.end)
+                    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+                  return (
+                    <div key={shift.key} style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <span style={{
+                          fontSize: '0.78rem', fontWeight: '700', padding: '3px 10px', borderRadius: '999px',
+                          backgroundColor: shift.key === 'morning' ? '#e0f2fe' : '#fef3c7',
+                          color: shift.key === 'morning' ? '#0369a1' : '#92400e'
+                        }}>
+                          {shift.label} · {shift.start} – {shift.end}
+                        </span>
+                        <span style={{ fontSize: '0.78rem' }} className="yalla-text-muted-flip">
+                          {shiftEntries.length} tâche{shiftEntries.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+
+                      {shiftEntries.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem', borderRadius: '10px' }} className="yalla-row-flip yalla-text-muted-flip">
+                          Aucune tâche enregistrée sur ce créneau.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {shiftEntries.map(entry => (
+                            <div
+                              key={entry.id}
+                              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderRadius: '10px' }}
+                              className="yalla-row-card yalla-row-flip"
+                            >
+                              <span style={{
+                                fontSize: '0.8rem', fontWeight: '700', fontFamily: 'monospace', flexShrink: 0, width: '104px'
+                              }} className="yalla-text-flip">
+                                {entry.start_time} – {entry.end_time}
+                              </span>
+                              <span style={{ flex: 1, fontSize: '0.9rem' }} className="yalla-text-flip">{entry.title}</span>
+                              <button
+                                onClick={() => handleDeleteScheduleEntry(entry.id)}
+                                style={{ ...styles.rowIconButton, color: '#dc2626', display: 'flex' }}
+                                className="yalla-icon-btn"
+                              >
+                                <IconTrash size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1080,7 +1323,7 @@ function App() {
                       <option value="Urgente">Priorité urgente</option>
                     </select>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                      <button type="submit" style={{ ...styles.premiumDeployButton, flex: 2, backgroundColor: editingTaskId ? '#d97706' : '#1e293b' }} className="yalla-primary-btn">
+                      <button type="submit" style={{ ...styles.premiumDeployButton, flex: 2, backgroundColor: editingTaskId ? '#d97706' : '#2b3e9a' }} className="yalla-primary-btn">
                         {editingTaskId ? "Sauvegarder les modifications" : "Planifier la mission"}
                       </button>
                       {editingTaskId && <button type="button" onClick={cancelTaskEditing} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>}
@@ -1193,7 +1436,7 @@ function App() {
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
                                     {isTaskOverdue(t) && (
-                                      <span style={{ ...styles.statusBadge, backgroundColor: '#fee2e2', color: '#b91c1c' }}>En retard</span>
+                                      <span style={{ ...styles.statusBadge, ...getOverdueBadgeStyle() }}>En retard</span>
                                     )}
                                     <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority) }}>{t.priority || 'Normale'}</span>
                                     <span style={{ ...styles.statusBadge, ...badgeStyle }}>{t.status}</span>
@@ -1468,6 +1711,8 @@ const styles = {
   fieldBlockLayout: { display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' },
   fieldInputLabel: { color: '#374151', fontSize: '0.88rem', fontWeight: '600' },
   primaryAdminConnectButton: { backgroundColor: '#2b3e9a', color: 'white', border: 'none', borderRadius: '10px', padding: '15px', fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer', marginTop: '10px', width: '100%', boxShadow: '0 4px 14px rgba(43, 62, 154, 0.22)' },
+  viewTabButton: { display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: '700', fontSize: '0.86rem', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.7)', color: '#64748b' },
+  viewTabButtonActive: { backgroundColor: '#2b3e9a', color: '#ffffff', boxShadow: '0 4px 14px rgba(43, 62, 154, 0.25)' },
 
   dashboardContainer: { width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', padding: '20px', boxSizing: 'border-box' },
   adminLayout: { width: '94%', maxWidth: '1400px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
@@ -1495,7 +1740,7 @@ const styles = {
   commentBubbleText: { margin: 0, color: '#1e293b', fontSize: '0.9rem', flex: 1 },
 
   menuAnchorWrapper: { position: 'relative', display: 'inline-block', overflow: 'visible' },
-  threeDotsButton: { display: 'flex', alignItems: 'center', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '6px', borderRadius: '6px' },
+  threeDotsButton: { display: 'flex', alignItems: 'center', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', borderRadius: '6px' },
   dropdownPopupBox: { position: 'absolute', right: 0, top: '28px', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(0,0,0,0.12)', zIndex: 9999, display: 'flex', flexDirection: 'column', padding: '6px', minWidth: '150px' },
   dropdownActionItem: { padding: '9px 12px', background: 'none', border: 'none', textAlign: 'left', fontSize: '0.86rem', fontWeight: '600', color: '#334155', cursor: 'pointer', borderRadius: '6px', width: '100%', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' },
 
@@ -1561,7 +1806,7 @@ const styles = {
   pillStatLabel: { fontSize: '0.86rem', color: '#64748b', fontWeight: '500' },
 
   trackingGroupsGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' },
-  trackingGroupColumn: { display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: '16px', border: '1px solid rgba(15,23,42,0.06)', boxShadow: '0 1px 2px rgba(15,23,42,0.03), 0 8px 24px rgba(15,23,42,0.04)', padding: '22px 24px' },
+  trackingGroupColumn: { display: 'flex', flexDirection: 'column', minWidth: 0, width: '100%', height: 'fit-content', alignSelf: 'start', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: '16px', border: '1px solid rgba(15,23,42,0.06)', boxShadow: '0 1px 2px rgba(15,23,42,0.03), 0 8px 24px rgba(15,23,42,0.04)', padding: '22px 24px' },
   trackingGroupHeader: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid rgba(0,0,0,0.06)' },
   trackingGroupDot: { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
   trackingGroupTitle: { margin: 0, fontSize: '1.02rem', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.01em', flex: 1 },
@@ -1577,7 +1822,7 @@ const styles = {
   sidebarNavGroup: { display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 },
   sidebarNavItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#475569', fontWeight: '600', fontSize: '0.88rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer', lineHeight: '1.25' },
   sidebarNavItemActive: { backgroundColor: 'rgba(43, 62, 154, 0.1)', color: '#2b3e9a' },
-  sidebarLogoutItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#dc2626', fontWeight: '600', fontSize: '0.86rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer' }
+  sidebarLogoutItem: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: '#f87171', fontWeight: '600', fontSize: '0.86rem', padding: '11px 12px', borderRadius: '9px', cursor: 'pointer', textDecoration: 'none' }
 };
 
 export default App;
