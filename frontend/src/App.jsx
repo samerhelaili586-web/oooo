@@ -152,6 +152,12 @@ function App() {
   const [uniqueCode, setUniqueCode] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotStep, setForgotStep] = useState('request'); // 'request' | 'reset'
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
 
   // Core Data Lists
   const [tasks, setTasks] = useState([]);
@@ -455,6 +461,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE}/api/admin/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: adminEmail, password: adminPassword })
       });
@@ -468,15 +475,55 @@ function App() {
     } catch (err) { setErrorMessage("Erreur de connexion."); }
   };
 
+  const handleForgotPasswordRequest = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotMessage('');
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+      setForgotMessage(data.message || "Si cet email est enregistré, un code a été envoyé.");
+      setForgotStep('reset');
+    } catch (err) { setForgotMessage("Erreur de connexion."); }
+  };
+
+  const handleResetPasswordConfirm = async (e) => {
+    e.preventDefault();
+    if (!resetCode || !newAdminPassword) return;
+    setForgotMessage('');
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail, code: resetCode, new_password: newAdminPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setForgotMessage("Mot de passe mis à jour. Vous pouvez vous connecter.");
+        setTimeout(() => {
+          setShowForgotPassword(false);
+          setForgotStep('request');
+          setForgotEmail(''); setResetCode(''); setNewAdminPassword(''); setForgotMessage('');
+        }, 1800);
+      } else {
+        setForgotMessage(data.message || "Code invalide ou expiré.");
+      }
+    } catch (err) { setForgotMessage("Erreur de connexion."); }
+  };
+
   const fetchAdminDashboardLedgers = async (silent = false) => {
     if (!silent) setLoadingLedgers(true);
     try {
-      const uRes = await fetch(`${API_BASE}/api/admin/users`);
+      const uRes = await fetch(`${API_BASE}/api/admin/users`, { credentials: 'include' });
       if (uRes.ok) {
         const uData = await uRes.json();
         setTeamList(Array.isArray(uData) ? uData : []);
       }
-      const tRes = await fetch(`${API_BASE}/api/admin/tasks`);
+      const tRes = await fetch(`${API_BASE}/api/admin/tasks`, { credentials: 'include' });
       if (tRes.ok) {
         const tData = await tRes.json();
         setTasks(Array.isArray(tData) ? tData : []);
@@ -487,7 +534,7 @@ function App() {
 
   const fetchAdminStats = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/stats`);
+      const res = await fetch(`${API_BASE}/api/admin/stats`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setAdminStats(data);
@@ -508,6 +555,7 @@ function App() {
     try {
       const res = await fetch(endpoint, {
         method: isEditing ? 'PUT' : 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newEmployeeName, unique_code: newEmployeeCode, sub_role: newEmployeeSubRole })
       });
@@ -529,7 +577,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) { fetchAdminDashboardLedgers(true); }
     } catch (err) { console.error(err); }
   };
@@ -542,6 +590,7 @@ function App() {
     try {
       const res = await fetch(endpoint, {
         method: isEditingTask ? 'PUT' : 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTaskTitle, description: newTaskDesc, date: newTaskDate, assigned_to_id: selectedEmployeeId, priority: newTaskPriority })
       });
@@ -584,7 +633,7 @@ function App() {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/admin/tasks/${id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) {
         setEditingTaskId(null);
         setActiveTaskMenuId(null);
@@ -837,24 +886,81 @@ function App() {
           <div style={styles.lockBadgeContainer}><div style={styles.blueCircleLockBadge}><IconLock size={22} /></div></div>
           <h2 style={styles.adminCardTitle} className="yalla-text-flip">Administration</h2>
           <p style={styles.adminCardSubtitle} className="yalla-text-muted-flip">Connectez-vous pour accéder à l'interface</p>
-          <form onSubmit={handleAdminLogin} style={styles.authForm}>
-            <div style={styles.fieldBlockLayout}>
-              <label style={styles.fieldInputLabel} className="yalla-text-flip">Email</label>
-              <div style={styles.inputContainer}>
-                <span style={styles.inputIcon}><IconMail size={16} /></span>
-                <input type="email" placeholder="votre.email@exemple.com" style={styles.pillInput} className="yalla-input-flip" value={adminEmail} onChange={e => setAdminEmail(e.target.value)} required />
+          {!showForgotPassword ? (
+            <>
+              <form onSubmit={handleAdminLogin} style={styles.authForm}>
+                <div style={styles.fieldBlockLayout}>
+                  <label style={styles.fieldInputLabel} className="yalla-text-flip">Email</label>
+                  <div style={styles.inputContainer}>
+                    <span style={styles.inputIcon}><IconMail size={16} /></span>
+                    <input type="email" placeholder="votre.email@exemple.com" style={styles.pillInput} className="yalla-input-flip" value={adminEmail} onChange={e => setAdminEmail(e.target.value)} required />
+                  </div>
+                </div>
+                <div style={styles.fieldBlockLayout}>
+                  <label style={styles.fieldInputLabel} className="yalla-text-flip">Mot de passe</label>
+                  <div style={styles.inputContainer}>
+                    <span style={styles.inputIcon}><IconLock size={16} /></span>
+                    <input type="password" placeholder="••••••••" style={styles.pillInput} className="yalla-input-flip" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} required />
+                  </div>
+                </div>
+                <button type="submit" style={styles.primaryAdminConnectButton} className="yalla-primary-btn">Se connecter</button>
+              </form>
+              {errorMessage && <div style={styles.errorBanner}>{errorMessage}</div>}
+              <div
+                style={{ marginTop: '14px', textAlign: 'center', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline', opacity: 0.75 }}
+                className="yalla-text-muted-flip"
+                onClick={() => { setShowForgotPassword(true); setForgotStep('request'); setForgotMessage(''); setForgotEmail(adminEmail); }}
+              >
+                Mot de passe oublié ?
               </div>
-            </div>
-            <div style={styles.fieldBlockLayout}>
-              <label style={styles.fieldInputLabel} className="yalla-text-flip">Mot de passe</label>
-              <div style={styles.inputContainer}>
-                <span style={styles.inputIcon}><IconLock size={16} /></span>
-                <input type="password" placeholder="••••••••" style={styles.pillInput} className="yalla-input-flip" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} required />
+            </>
+          ) : (
+            <>
+              {forgotStep === 'request' ? (
+                <form onSubmit={handleForgotPasswordRequest} style={styles.authForm}>
+                  <p style={styles.adminCardSubtitle} className="yalla-text-muted-flip">
+                    Entrez votre email admin. Un code de vérification vous sera envoyé.
+                  </p>
+                  <div style={styles.fieldBlockLayout}>
+                    <label style={styles.fieldInputLabel} className="yalla-text-flip">Email</label>
+                    <div style={styles.inputContainer}>
+                      <span style={styles.inputIcon}><IconMail size={16} /></span>
+                      <input type="email" placeholder="votre.email@exemple.com" style={styles.pillInput} className="yalla-input-flip" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
+                    </div>
+                  </div>
+                  <button type="submit" style={styles.primaryAdminConnectButton} className="yalla-primary-btn">Envoyer le code</button>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPasswordConfirm} style={styles.authForm}>
+                  <p style={styles.adminCardSubtitle} className="yalla-text-muted-flip">
+                    Entrez le code reçu par email et votre nouveau mot de passe.
+                  </p>
+                  <div style={styles.fieldBlockLayout}>
+                    <label style={styles.fieldInputLabel} className="yalla-text-flip">Code (6 chiffres)</label>
+                    <div style={styles.inputContainer}>
+                      <input type="text" placeholder="123456" style={styles.pillInput} className="yalla-input-flip" value={resetCode} onChange={e => setResetCode(e.target.value)} maxLength={6} required />
+                    </div>
+                  </div>
+                  <div style={styles.fieldBlockLayout}>
+                    <label style={styles.fieldInputLabel} className="yalla-text-flip">Nouveau mot de passe</label>
+                    <div style={styles.inputContainer}>
+                      <span style={styles.inputIcon}><IconLock size={16} /></span>
+                      <input type="password" placeholder="••••••••" style={styles.pillInput} className="yalla-input-flip" value={newAdminPassword} onChange={e => setNewAdminPassword(e.target.value)} minLength={8} required />
+                    </div>
+                  </div>
+                  <button type="submit" style={styles.primaryAdminConnectButton} className="yalla-primary-btn">Réinitialiser</button>
+                </form>
+              )}
+              {forgotMessage && <div style={styles.errorBanner}>{forgotMessage}</div>}
+              <div
+                style={{ marginTop: '14px', textAlign: 'center', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline', opacity: 0.75 }}
+                className="yalla-text-muted-flip"
+                onClick={() => { setShowForgotPassword(false); setForgotStep('request'); setForgotMessage(''); }}
+              >
+                Retour à la connexion
               </div>
-            </div>
-            <button type="submit" style={styles.primaryAdminConnectButton} className="yalla-primary-btn">Se connecter</button>
-          </form>
-          {errorMessage && <div style={styles.errorBanner}>{errorMessage}</div>}
+            </>
+          )}
         </div>
       )}
 

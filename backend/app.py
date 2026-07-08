@@ -1,7 +1,11 @@
 import os
-from datetime import datetime
+import random
+import smtplib
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from functools import wraps
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,14 +14,53 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# Secret key for signing the admin session cookie. MUST be set to a long random
+# value via env var in production — the fallback is only for local dev.
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-only-change-me')
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'False') == 'True'
+
 # CORS: restrict to configured origin(s) in production; defaults to allow-all for local dev.
+# supports_credentials is required so the browser sends/keeps the admin session cookie.
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*')
-CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS.split(',') if ALLOWED_ORIGINS != '*' else '*'}})
+CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": ALLOWED_ORIGINS.split(',') if ALLOWED_ORIGINS != '*' else '*'}})
 
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+# --- EMAIL (used for the admin "forgot password" reset code) ---
+# Uses the admin's own Gmail account as the sender via an App Password
+# (Google Account -> Security -> 2-Step Verification -> App passwords).
+# Never use the normal Gmail login password here.
+SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+SMTP_USER = os.environ.get('SMTP_USER')          # the admin's Gmail address
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')  # the 16-char Gmail App Password
+
+
+def send_email(to_address, subject, body):
+    if not SMTP_USER or not SMTP_PASSWORD:
+        raise RuntimeError('SMTP_USER / SMTP_PASSWORD not configured on the server.')
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = SMTP_USER
+    msg['To'] = to_address
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.sendmail(SMTP_USER, [to_address], msg.as_string())
+
+
+def admin_required(view_func):
+    """Guards every /api/admin/* route: caller must hold a valid admin session cookie."""
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not session.get('admin_id'):
+            return jsonify({"status": "error", "message": "Authentification requise."}), 401
+        return view_func(*args, **kwargs)
+    return wrapper
 
 
 def ensure_priority_column():
@@ -28,6 +71,20 @@ def ensure_priority_column():
             if 'priority' not in cols:
                 conn.exec_driver_sql("ALTER TABLE tasks ADD COLUMN priority VARCHAR(20) DEFAULT 'Normale'")
                 conn.commit()
+    except Exception:
+        pass
+
+
+def ensure_reset_code_columns():
+    """Add the password-reset columns to pre-existing SQLite databases."""
+    try:
+        with db.engine.connect() as conn:
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
+            if 'reset_code_hash' not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN reset_code_hash VARCHAR(200)")
+            if 'reset_code_expires' not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN reset_code_expires DATETIME")
+            conn.commit()
     except Exception:
         pass
 
@@ -50,6 +107,9 @@ class User(db.Model):
 
     email = db.Column(db.String(100), unique=True, nullable=True)
     password = db.Column(db.String(100), nullable=True)
+
+    reset_code_hash = db.Column(db.String(200), nullable=True)
+    reset_code_expires = db.Column(db.DateTime, nullable=True)
 
     tasks = db.relationship('Task', backref='assigned_user', lazy=True)
 
@@ -112,12 +172,13 @@ def seed_initial_accounts():
             role="employee",
             sub_role="cm"
         ))
-    if not User.query.filter_by(email='admin@yalla.com').first():
+    admin_email = os.environ.get('ADMIN_EMAIL', 'admin@yalla.com')
+    if not User.query.filter_by(role='admin').first():
         default_admin_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'yalla')
         db.session.add(User(
             name="Direction Générale",
             role="admin",
-            email="admin@yalla.com",
+            email=admin_email,
             password=generate_password_hash(default_admin_password)
         ))
     db.session.commit()
@@ -161,8 +222,75 @@ def admin_login():
             db.session.commit()
 
     if valid:
+        session['admin_id'] = admin.id
         return jsonify({"status": "success", "role": "admin", "name": admin.name}), 200
     return jsonify({"status": "error", "message": "Identifiants administratifs incorrects."}), 401
+
+
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    session.pop('admin_id', None)
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/admin/forgot-password', methods=['POST'])
+def admin_forgot_password():
+    """Sends a 6-digit reset code to the admin's own email (valid 15 minutes)."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
+    admin = User.query.filter_by(email=email, role='admin').first()
+
+    # Always return the same generic response whether or not the email matched,
+    # so this endpoint can't be used to check which emails are registered admins.
+    generic_response = jsonify({
+        "status": "success",
+        "message": "Si cet email est enregistré, un code a été envoyé."
+    }), 200
+
+    if not admin:
+        return generic_response
+
+    code = f"{random.randint(0, 999999):06d}"
+    admin.reset_code_hash = generate_password_hash(code)
+    admin.reset_code_expires = datetime.utcnow() + timedelta(minutes=15)
+    db.session.commit()
+
+    try:
+        send_email(
+            admin.email,
+            "YALLA — Code de réinitialisation",
+            f"Votre code de réinitialisation est : {code}\n\nCe code expire dans 15 minutes. "
+            f"Si vous n'avez pas demandé ce changement, ignorez cet email."
+        )
+    except Exception:
+        # Don't leak SMTP errors to the client; the admin can retry, and the
+        # generic response below avoids revealing whether sending failed.
+        pass
+
+    return generic_response
+
+
+@app.route('/api/admin/reset-password', methods=['POST'])
+def admin_reset_password():
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
+    code = (data.get('code') or '').strip()
+    new_password = data.get('new_password') or ''
+
+    if len(new_password) < 8:
+        return jsonify({"status": "error", "message": "Le mot de passe doit contenir au moins 8 caractères."}), 400
+
+    admin = User.query.filter_by(email=email, role='admin').first()
+    if (not admin or not admin.reset_code_hash or not admin.reset_code_expires
+            or admin.reset_code_expires < datetime.utcnow()
+            or not check_password_hash(admin.reset_code_hash, code)):
+        return jsonify({"status": "error", "message": "Code invalide ou expiré."}), 400
+
+    admin.password = generate_password_hash(new_password)
+    admin.reset_code_hash = None
+    admin.reset_code_expires = None
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Mot de passe mis à jour."}), 200
 
 
 @app.route('/api/tasks/<int:user_id>', methods=['GET'])
@@ -380,6 +508,7 @@ def handle_comment_actions(comment_id):
 
 
 @app.route('/api/admin/users', methods=['GET', 'POST'])
+@admin_required
 def handle_admin_users():
     if request.method == 'POST':
         data = request.json or {}
@@ -402,6 +531,7 @@ def handle_admin_users():
 
 
 @app.route('/api/admin/users/<int:user_id>', methods=['PUT', 'DELETE'])
+@admin_required
 def update_or_delete_user(user_id):
     user = User.query.get_or_404(user_id)
     if request.method == 'DELETE':
@@ -421,6 +551,7 @@ def update_or_delete_user(user_id):
 
 
 @app.route('/api/admin/tasks', methods=['GET', 'POST'])
+@admin_required
 def handle_admin_tasks():
     if request.method == 'POST':
         data = request.json or {}
@@ -458,6 +589,7 @@ def handle_admin_tasks():
 
 
 @app.route('/api/admin/tasks/<int:task_id>', methods=['PUT', 'DELETE'])
+@admin_required
 def update_or_delete_task(task_id):
     task = Task.query.get_or_404(task_id)
     if request.method == 'DELETE':
@@ -484,6 +616,7 @@ def update_or_delete_task(task_id):
 
 
 @app.route('/api/admin/stats', methods=['GET'])
+@admin_required
 def get_admin_stats():
     """Aggregate analytics used by the new Analytics dashboard tab."""
     all_tasks = Task.query.all()
@@ -532,6 +665,7 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         ensure_priority_column()
+        ensure_reset_code_columns()
         seed_initial_accounts()
     debug_mode = os.environ.get('FLASK_DEBUG', 'True') == 'True'
     port = int(os.environ.get('PORT', 5050))
