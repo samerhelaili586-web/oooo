@@ -201,10 +201,33 @@ function App() {
 
   // Employee side self-creation form states
   const [newEmployeeTaskTitle, setNewEmployeeTaskTitle] = useState('');
+
+  // Suggested shooting titles, tailored to each role — clicking one fills
+  // the title instantly, but typing freely still works exactly the same.
+  const TASK_TITLE_SUGGESTIONS = {
+    cm: [
+      'Story Instagram', 'Reel TikTok', 'Post carrousel', 'Couverture événement live',
+      'Behind the scenes', 'Interview courte', 'Contenu UGC', 'Teaser campagne'
+    ],
+    prod: [
+      'Shooting photo produit', 'Tournage vidéo corporate', 'Captation événement',
+      'Shooting portrait équipe', 'Prise de vue drone', 'Shooting packshot',
+      'Montage vidéo', 'Repérage lieu de tournage'
+    ]
+  };
   const [newEmployeeTaskDesc, setNewEmployeeTaskDesc] = useState('');
-  const [newEmployeeTaskDate, setNewEmployeeTaskDate] = useState('');
+  const [newEmployeeTaskDate, setNewEmployeeTaskDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [newEmployeeTaskPriority, setNewEmployeeTaskPriority] = useState('Normale');
   const [showCreateShootingModal, setShowCreateShootingModal] = useState(false);
+  const [listShowAllDates, setListShowAllDates] = useState(false);
+
+  // --- Edit an existing employee-owned shooting (blocked once its date is in the past) ---
+  const [editingEmployeeTaskId, setEditingEmployeeTaskId] = useState(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskDate, setEditTaskDate] = useState('');
+  const [editTaskDesc, setEditTaskDesc] = useState('');
+  const [editTaskPriority, setEditTaskPriority] = useState('Normale');
+  const [editTaskError, setEditTaskError] = useState('');
 
   // Priority for the admin task deployment form
   const [newTaskPriority, setNewTaskPriority] = useState('Normale');
@@ -258,8 +281,8 @@ function App() {
     } catch (err) { setErrorMessage("Erreur de connexion."); }
   };
 
-  const fetchEmployeeTasks = async (userId) => {
-    setLoadingTasks(true);
+  const fetchEmployeeTasks = async (userId, silent = false) => {
+    if (!silent) setLoadingTasks(true);
     try {
       const response = await fetch(`${API_BASE}/api/tasks/${userId}`);
       if (response.ok) {
@@ -267,7 +290,7 @@ function App() {
         setTasks(Array.isArray(data) ? data : []);
       }
     } catch (err) { console.error(err); }
-    finally { setLoadingTasks(false); }
+    finally { if (!silent) setLoadingTasks(false); }
   };
 
   const handleEmployeeSelfCreateTask = async (e) => {
@@ -288,10 +311,10 @@ function App() {
       if (res.ok) {
         setNewEmployeeTaskTitle('');
         setNewEmployeeTaskDesc('');
-        setNewEmployeeTaskDate('');
+        setNewEmployeeTaskDate(todayISO());
         setNewEmployeeTaskPriority('Normale');
         setShowCreateShootingModal(false);
-        fetchEmployeeTasks(currentUser.user_id);
+        fetchEmployeeTasks(currentUser.user_id, true);
       }
     } catch (err) { console.error(err); }
   };
@@ -306,7 +329,7 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/tasks/${taskId}`, { method: 'DELETE' });
       if (res.ok && currentUser) {
-        fetchEmployeeTasks(currentUser.user_id);
+        fetchEmployeeTasks(currentUser.user_id, true);
       }
     } catch (err) { console.error(err); }
   };
@@ -326,6 +349,8 @@ function App() {
     return `${elapsedHours}h ${elapsedMinutes > 0 ? elapsedMinutes + 'm' : ''}`;
   };
 
+  const [timeFieldErrors, setTimeFieldErrors] = useState({});
+
   const handleUpdateTaskMetrics = async (taskId, updatedPayload) => {
     try {
       const res = await fetch(`${API_BASE}/api/tasks/${taskId}/metrics`, {
@@ -334,10 +359,48 @@ function App() {
         body: JSON.stringify(updatedPayload)
       });
       if (res.ok) {
-        if (currentView === 'admin_dashboard' || currentView === 'admin_tracking') fetchAdminDashboardLedgers();
-        else if (currentUser) fetchEmployeeTasks(currentUser.user_id);
+        setTimeFieldErrors(prev => { const next = { ...prev }; delete next[taskId]; return next; });
+        if (currentView === 'admin_dashboard' || currentView === 'admin_tracking') fetchAdminDashboardLedgers(true);
+        else if (currentUser) fetchEmployeeTasks(currentUser.user_id, true);
+      } else if ('started_at' in updatedPayload || 'finished_at' in updatedPayload) {
+        const data = await res.json().catch(() => ({}));
+        setTimeFieldErrors(prev => ({ ...prev, [taskId]: data.message || "Heure invalide." }));
       }
     } catch (err) { console.error(err); }
+  };
+
+  const openEditTaskModal = (task) => {
+    setEditingEmployeeTaskId(task.id);
+    setEditTaskTitle(task.title || '');
+    setEditTaskDate(task.date || todayISO());
+    setEditTaskDesc(task.description || '');
+    setEditTaskPriority(task.priority || 'Normale');
+    setEditTaskError('');
+  };
+
+  const handleSubmitEditTask = async (e) => {
+    e.preventDefault();
+    if (!editTaskTitle.trim() || !editingEmployeeTaskId) return;
+    setEditTaskError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/${editingEmployeeTaskId}/metrics`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTaskTitle.trim(),
+          date: editTaskDate,
+          description: editTaskDesc,
+          priority: editTaskPriority
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setEditingEmployeeTaskId(null);
+        if (currentUser) fetchEmployeeTasks(currentUser.user_id, true);
+      } else {
+        setEditTaskError(data.message || "Impossible de modifier ce shooting.");
+      }
+    } catch (err) { setEditTaskError("Erreur de connexion."); }
   };
 
   const handleUpdateTaskComment = async (taskId) => {
@@ -351,7 +414,7 @@ function App() {
       });
       if (res.ok && currentUser) {
         setTypedComments(prev => ({ ...prev, [taskId]: '' }));
-        fetchEmployeeTasks(currentUser.user_id);
+        fetchEmployeeTasks(currentUser.user_id, true);
       }
     } catch (err) { console.error(err); }
   };
@@ -366,8 +429,8 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/comments/${commentId}`, { method: 'DELETE' });
       if (res.ok) {
-        if (currentView === 'admin_dashboard' || currentView === 'admin_tracking') fetchAdminDashboardLedgers();
-        else if (currentUser) fetchEmployeeTasks(currentUser.user_id);
+        if (currentView === 'admin_dashboard' || currentView === 'admin_tracking') fetchAdminDashboardLedgers(true);
+        else if (currentUser) fetchEmployeeTasks(currentUser.user_id, true);
       }
     } catch (err) { console.error(err); }
   };
@@ -382,7 +445,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: updatedText })
       });
-      if (res.ok && currentUser) { fetchEmployeeTasks(currentUser.user_id); }
+      if (res.ok && currentUser) { fetchEmployeeTasks(currentUser.user_id, true); }
     } catch (err) { console.error(err); }
   };
 
@@ -399,14 +462,14 @@ function App() {
       if (response.ok) {
         setErrorMessage('');
         setCurrentUser(data);
-        fetchAdminDashboardLedgers();
+        fetchAdminDashboardLedgers(true);
         setCurrentView('admin_dashboard');
       } else { setErrorMessage(data.message); }
     } catch (err) { setErrorMessage("Erreur de connexion."); }
   };
 
-  const fetchAdminDashboardLedgers = async () => {
-    setLoadingLedgers(true);
+  const fetchAdminDashboardLedgers = async (silent = false) => {
+    if (!silent) setLoadingLedgers(true);
     try {
       const uRes = await fetch(`${API_BASE}/api/admin/users`);
       if (uRes.ok) {
@@ -419,7 +482,7 @@ function App() {
         setTasks(Array.isArray(tData) ? tData : []);
       }
     } catch (err) { console.error(err); }
-    finally { setLoadingLedgers(false); }
+    finally { if (!silent) setLoadingLedgers(false); }
   };
 
   const fetchAdminStats = async () => {
@@ -453,7 +516,7 @@ function App() {
         setNewEmployeeCode('');
         setNewEmployeeSubRole('prod');
         setEditingUserId(null);
-        fetchAdminDashboardLedgers();
+        fetchAdminDashboardLedgers(true);
       }
     } catch (err) { console.error(err); }
   };
@@ -467,7 +530,7 @@ function App() {
     if (!ok) return;
     try {
       const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE' });
-      if (res.ok) { fetchAdminDashboardLedgers(); }
+      if (res.ok) { fetchAdminDashboardLedgers(true); }
     } catch (err) { console.error(err); }
   };
 
@@ -489,7 +552,7 @@ function App() {
         setSelectedEmployeeId('');
         setNewTaskPriority('Normale');
         setEditingTaskId(null);
-        fetchAdminDashboardLedgers();
+        fetchAdminDashboardLedgers(true);
       }
     } catch (err) { console.error(err); }
   };
@@ -525,7 +588,7 @@ function App() {
       if (res.ok) {
         setEditingTaskId(null);
         setActiveTaskMenuId(null);
-        fetchAdminDashboardLedgers();
+        fetchAdminDashboardLedgers(true);
       }
     } catch (err) { console.error(err); }
   };
@@ -866,9 +929,42 @@ function App() {
           </div>
 
           {employeeSubView === 'list' && (<>
+          <div style={{ ...styles.scheduleHeaderStrip, borderRadius: '16px', marginBottom: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => { const d = new Date(scheduleDate); d.setDate(d.getDate() - 1); setScheduleDate(d.toISOString().slice(0, 10)); }}
+                  style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                ><IconArrowLeft size={14} /></button>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  style={styles.scheduleDateInputDark}
+                />
+                <button
+                  type="button"
+                  onClick={() => { const d = new Date(scheduleDate); d.setDate(d.getDate() + 1); setScheduleDate(d.toISOString().slice(0, 10)); }}
+                  style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                ><IconArrowRight size={14} /></button>
+                {scheduleDate !== todayISO() && (
+                  <button type="button" onClick={() => setScheduleDate(todayISO())} style={styles.scheduleTodayBtnDark}>Aujourd'hui</button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setListShowAllDates(v => !v)}
+                style={{ ...styles.scheduleTodayBtnDark, backgroundColor: listShowAllDates ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.15)' }}
+              >
+                {listShowAllDates ? 'Toutes les dates ✓' : 'Voir toutes les dates'}
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
-            onClick={() => setShowCreateShootingModal(true)}
+            onClick={() => { setNewEmployeeTaskDate(todayISO()); setShowCreateShootingModal(true); }}
             style={{ ...styles.premiumUserCard, marginBottom: '24px', backgroundColor: 'rgba(255, 255, 255, 0.9)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', border: 'none', textAlign: 'left', width: '100%' }}
             className="yalla-row-card yalla-surface-flip"
           >
@@ -897,6 +993,26 @@ function App() {
                     <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeTaskTitle} onChange={e => setNewEmployeeTaskTitle(e.target.value)} required />
                     <input type="date" style={styles.premiumInput} className="yalla-input-flip" value={newEmployeeTaskDate} onChange={e => setNewEmployeeTaskDate(e.target.value)} min={todayISODate} required />
                   </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {(TASK_TITLE_SUGGESTIONS[currentUser?.sub_role] || TASK_TITLE_SUGGESTIONS.prod).map(suggestion => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setNewEmployeeTaskTitle(suggestion)}
+                        style={{
+                          fontSize: '0.74rem', fontWeight: '600', padding: '5px 11px', borderRadius: '999px',
+                          border: newEmployeeTaskTitle === suggestion ? '1px solid #2b3e9a' : '1px solid rgba(148,163,184,0.4)',
+                          backgroundColor: newEmployeeTaskTitle === suggestion ? '#eef2ff' : 'transparent',
+                          color: newEmployeeTaskTitle === suggestion ? '#2b3e9a' : '#64748b',
+                          cursor: 'pointer'
+                        }}
+                        className={newEmployeeTaskTitle === suggestion ? '' : 'yalla-text-muted-flip'}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                   <textarea placeholder="Instructions ou notes complémentaires..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} className="yalla-input-flip" value={newEmployeeTaskDesc} onChange={e => setNewEmployeeTaskDesc(e.target.value)} />
                   <select style={styles.premiumSelect} className="yalla-input-flip" value={newEmployeeTaskPriority} onChange={e => setNewEmployeeTaskPriority(e.target.value)}>
                     <option value="Basse">Priorité basse</option>
@@ -913,13 +1029,84 @@ function App() {
             </div>
           )}
 
+          {editingEmployeeTaskId !== null && (
+            <div
+              style={{ ...styles.modalOverlay, animation: 'yallaOverlayIn 0.18s ease' }}
+              onClick={() => setEditingEmployeeTaskId(null)}
+            >
+              <div style={{ ...styles.modalCard, animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} className="yalla-surface-flip-solid" onClick={(e) => e.stopPropagation()}>
+                <div style={styles.modalHeader}>
+                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }} className="yalla-text-flip">
+                    <IconEdit size={18} /> Modifier le shooting
+                  </h3>
+                  <button type="button" onClick={() => setEditingEmployeeTaskId(null)} style={styles.modalCloseBtn} className="yalla-icon-btn">
+                    <IconX size={18} />
+                  </button>
+                </div>
+                <form onSubmit={handleSubmitEditTask} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <input type="text" placeholder="Titre du shooting" style={styles.premiumInput} className="yalla-input-flip" value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} required />
+                    <input type="date" style={styles.premiumInput} className="yalla-input-flip" value={editTaskDate} onChange={e => setEditTaskDate(e.target.value)} min={todayISODate} required />
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {(TASK_TITLE_SUGGESTIONS[currentUser?.sub_role] || TASK_TITLE_SUGGESTIONS.prod).map(suggestion => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setEditTaskTitle(suggestion)}
+                        style={{
+                          fontSize: '0.74rem', fontWeight: '600', padding: '5px 11px', borderRadius: '999px',
+                          border: editTaskTitle === suggestion ? '1px solid #2b3e9a' : '1px solid rgba(148,163,184,0.4)',
+                          backgroundColor: editTaskTitle === suggestion ? '#eef2ff' : 'transparent',
+                          color: editTaskTitle === suggestion ? '#2b3e9a' : '#64748b',
+                          cursor: 'pointer'
+                        }}
+                        className={editTaskTitle === suggestion ? '' : 'yalla-text-muted-flip'}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea placeholder="Instructions ou notes complémentaires..." style={{ ...styles.premiumInput, height: '70px', resize: 'none' }} className="yalla-input-flip" value={editTaskDesc} onChange={e => setEditTaskDesc(e.target.value)} />
+                  <select style={styles.premiumSelect} className="yalla-input-flip" value={editTaskPriority} onChange={e => setEditTaskPriority(e.target.value)}>
+                    <option value="Basse">Priorité basse</option>
+                    <option value="Normale">Priorité normale</option>
+                    <option value="Haute">Priorité haute</option>
+                    <option value="Urgente">Priorité urgente</option>
+                  </select>
+                  {editTaskError && <div style={styles.errorBanner}>{editTaskError}</div>}
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                    <button type="button" onClick={() => setEditingEmployeeTaskId(null)} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>
+                    <button type="submit" style={{ ...styles.commentBarSubmitBtn, padding: '10px 18px', cursor: 'pointer' }} className="yalla-primary-btn">Enregistrer les modifications</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           <div style={styles.scrollArea}>
             {loadingTasks ? (
               <SkeletonTaskList rows={3} />
-            ) : !tasks || tasks.length === 0 ? (
-              <div style={styles.emptyAlert} className="yalla-surface-flip">Aucun shooting au planning pour le moment.</div>
-            ) : (
-              (tasks || []).map(t => {
+            ) : (() => {
+              const visibleTasks = (tasks || [])
+                .filter(t => listShowAllDates || t.date === scheduleDate)
+                .slice()
+                .sort((a, b) => {
+                  if (listShowAllDates && a.date !== b.date) return (a.date || '').localeCompare(b.date || '');
+                  if (!a.started_at && !b.started_at) return 0;
+                  if (!a.started_at) return 1;
+                  if (!b.started_at) return -1;
+                  return a.started_at.localeCompare(b.started_at);
+                });
+              if (visibleTasks.length === 0) {
+                return (
+                  <div style={styles.emptyAlert} className="yalla-surface-flip">
+                    {listShowAllDates ? 'Aucun shooting au planning pour le moment.' : "Aucun shooting prévu à cette date."}
+                  </div>
+                );
+              }
+              return visibleTasks.map(t => {
                 const totalDurationStr = calculateTotalDuration(t.started_at, t.finished_at);
                 return (
                   <div key={t.id} style={styles.premiumUserCard} className="yalla-row-card yalla-surface-flip">
@@ -946,13 +1133,24 @@ function App() {
                         </select>
 
                         {t.is_self_created && (
-                          <button
-                            title="Supprimer mon shooting"
-                            onClick={() => handleDeleteEmployeeOwnedTask(t.id)}
-                            style={{ ...styles.rowIconButton, padding: '6px', backgroundColor: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', color: '#dc2626', display: 'flex' }} className="yalla-icon-btn"
-                          >
-                            <IconTrash size={14} />
-                          </button>
+                          <>
+                            {t.date >= todayISO() && (
+                              <button
+                                title="Modifier ce shooting"
+                                onClick={() => openEditTaskModal(t)}
+                                style={{ ...styles.rowIconButton, padding: '6px', backgroundColor: 'rgba(43, 62, 154, 0.08)', borderRadius: '8px', color: '#2b3e9a', display: 'flex' }} className="yalla-icon-btn"
+                              >
+                                <IconEdit size={14} />
+                              </button>
+                            )}
+                            <button
+                              title="Supprimer mon shooting"
+                              onClick={() => handleDeleteEmployeeOwnedTask(t.id)}
+                              style={{ ...styles.rowIconButton, padding: '6px', backgroundColor: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', color: '#dc2626', display: 'flex' }} className="yalla-icon-btn"
+                            >
+                              <IconTrash size={14} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -968,6 +1166,7 @@ function App() {
                           value={t.started_at || ''}
                           onChange={(e) => handleUpdateTaskMetrics(t.id, { started_at: e.target.value })}
                           style={{ border: '1px solid #cbd5e1', padding: '4px', borderRadius: '6px', outline: 'none' }}
+                          title="Créneaux autorisés : 08:30–13:00 ou 14:00–17:30"
                         />
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}>
@@ -977,15 +1176,20 @@ function App() {
                           value={t.finished_at || ''}
                           onChange={(e) => handleUpdateTaskMetrics(t.id, { finished_at: e.target.value })}
                           style={{ border: '1px solid #cbd5e1', padding: '4px', borderRadius: '6px', outline: 'none' }}
+                          title="Créneaux autorisés : 08:30–13:00 ou 14:00–17:30"
                         />
                       </div>
-
                       {totalDurationStr && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.88rem', fontWeight: '700', color: '#2b3e9a', backgroundColor: '#e0e7ff', padding: '4px 10px', borderRadius: '8px', marginLeft: 'auto' }}>
                           <IconClock size={13} /> Durée totale : {totalDurationStr}
                         </div>
                       )}
                     </div>
+                    {timeFieldErrors[t.id] && (
+                      <p style={{ color: '#dc2626', fontSize: '0.78rem', fontWeight: '600', margin: '6px 0 0', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <IconAlertTriangle size={12} /> {timeFieldErrors[t.id]}
+                      </p>
+                    )}
 
                     {t?.comments && t?.comments.length > 0 && (
                       <div style={styles.commentsHistoryBlock}>
@@ -1037,8 +1241,8 @@ function App() {
                     </div>
                   </div>
                 );
-              })
-            )}
+              });
+            })()}
           </div>
           </>)}
 

@@ -303,14 +303,55 @@ def delete_schedule_entry(entry_id):
     return jsonify({"status": "success"}), 200
 
 
+def _time_in_any_shift(hhmm):
+    try:
+        m = _time_to_minutes(hhmm)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return any(_time_to_minutes(s) <= m <= _time_to_minutes(e) for s, e in SHIFTS)
+
+
 @app.route('/api/tasks/<int:task_id>/metrics', methods=['PUT'])
 def update_task_metrics(task_id):
     task = Task.query.get_or_404(task_id)
     data = request.json or {}
+
+    # Editing the shooting's core details (title/description/date/priority)
+    # is locked once the shooting's date is in the past — status and time
+    # tracking stay editable so people can still close out yesterday's work.
+    editing_core_fields = any(k in data for k in ('title', 'description', 'date'))
+    if editing_core_fields and task.date and task.date < datetime.utcnow().strftime('%Y-%m-%d'):
+        return jsonify({"status": "error", "message": "Impossible de modifier un shooting dont la date est passée."}), 403
+
+    # Resolve what started_at/finished_at would become after this update,
+    # without committing yet, so we can validate the full picture first.
+    next_started = data.get('started_at') if 'started_at' in data else task.started_at
+    next_finished = data.get('finished_at') if 'finished_at' in data else task.finished_at
+
+    if 'started_at' in data and next_started and not _time_in_any_shift(next_started):
+        return jsonify({"status": "error", "message": "L'heure de début doit être comprise entre 08:30–13:00 ou 14:00–17:30."}), 400
+    if 'finished_at' in data and next_finished and not _time_in_any_shift(next_finished):
+        return jsonify({"status": "error", "message": "L'heure de fin doit être comprise entre 08:30–13:00 ou 14:00–17:30."}), 400
+    if next_started and next_finished:
+        violation = _entry_shift_violation(next_started, next_finished)
+        if violation:
+            return jsonify({"status": "error", "message": violation}), 400
+
     if 'status' in data: task.status = data.get('status')
-    if 'started_at' in data: task.started_at = data.get('started_at')
-    if 'finished_at' in data: task.finished_at = data.get('finished_at')
+    if 'started_at' in data: task.started_at = next_started
+    if 'finished_at' in data: task.finished_at = next_finished
     if 'priority' in data: task.priority = data.get('priority')
+    if 'title' in data:
+        title = (data.get('title') or '').strip()
+        if not title:
+            return jsonify({"status": "error", "message": "Le titre ne peut pas être vide."}), 400
+        task.title = title
+    if 'description' in data: task.description = data.get('description')
+    if 'date' in data:
+        new_date = data.get('date')
+        if new_date and new_date < datetime.utcnow().strftime('%Y-%m-%d'):
+            return jsonify({"status": "error", "message": "Impossible de déplacer un shooting vers une date passée."}), 400
+        task.date = new_date
     db.session.commit()
     return jsonify({"status": "success"}), 200
 
