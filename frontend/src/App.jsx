@@ -660,6 +660,7 @@ function App() {
         /* Modal entrance */
         @keyframes yallaModalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes yallaOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes yallaPulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
 
         /* Skeleton shimmer */
         @keyframes yallaShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
@@ -1042,84 +1043,269 @@ function App() {
           </>)}
 
           {employeeSubView === 'schedule' && (
-            <div style={styles.premiumUserCard} className="yalla-surface-flip">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
-                <h2 style={{ ...styles.userTaskTitleText, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }} className="yalla-text-flip">
-                  <IconClock size={18} /> Planning du {scheduleDate}
-                </h2>
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  style={{ ...styles.formInput, width: 'auto', margin: 0 }}
-                  className="yalla-input-flip"
-                />
-              </div>
-
-              <p style={{ fontSize: '0.8rem', margin: '0 0 16px 0' }} className="yalla-text-muted-flip">
-                Ce planning affiche automatiquement vos shootings du jour sélectionné (les mêmes que dans « Mes Shootings »), répartis selon leur heure de début.
-              </p>
-
-              {(() => {
-                const dayTasks = (tasks || []).filter(t => t.date === scheduleDate);
-                const morning = dayTasks
-                  .filter(t => t.started_at && t.started_at < '13:00')
-                  .sort((a, b) => a.started_at.localeCompare(b.started_at));
-                const afternoon = dayTasks
-                  .filter(t => t.started_at && t.started_at >= '13:00')
-                  .sort((a, b) => a.started_at.localeCompare(b.started_at));
-                const unscheduled = dayTasks.filter(t => !t.started_at);
-
-                const renderScheduleTask = (t) => (
-                  <div key={t.id} style={{ padding: '10px 14px', borderRadius: '10px', marginBottom: '8px' }} className="yalla-row-card yalla-row-flip">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: 'monospace', flexShrink: 0 }} className="yalla-text-flip">
-                        {t.started_at || '--:--'}{t.finished_at ? ` – ${t.finished_at}` : ''}
-                      </span>
-                      <span style={{ flex: 1, fontSize: '0.9rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
-                      <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
-                      <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
-                    </div>
+            <div style={{ position: 'relative', left: '50%', transform: 'translateX(-50%)', width: 'min(1180px, 94vw)' }}>
+            <div style={{ ...styles.premiumUserCard, padding: 0, overflow: 'hidden' }} className="yalla-surface-flip">
+              <div style={styles.scheduleHeaderStrip}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '10px', textTransform: 'capitalize' }}>
+                      <IconClock size={20} />
+                      {new Date(scheduleDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </h2>
+                    <p style={{ margin: '6px 0 0 30px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.75)' }}>
+                      Vos shootings positionnés selon leur heure de début et de fin
+                    </p>
                   </div>
-                );
-
-                return (
-                  <div style={{
-                    border: '1px solid rgba(15,23,42,0.14)',
-                    borderRadius: '12px',
-                    overflow: 'hidden'
-                  }} className="yalla-divider-flip">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 18px', fontSize: '0.75rem', fontWeight: 700 }} className="yalla-text-muted-flip">
-                      <span>08:30</span><span>13:00</span><span>14:00</span><span>17:30</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 4px 1fr', minHeight: '220px' }} className="yalla-schedule-grid">
-                      <div style={{ padding: '16px' }}>
-                        {morning.length === 0
-                          ? <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem' }} className="yalla-text-muted-flip">Aucune tâche sur ce créneau.</div>
-                          : morning.map(renderScheduleTask)}
-                      </div>
-
-                      <div style={{
-                        background: 'repeating-linear-gradient(180deg, rgba(148,163,184,0.4) 0, rgba(148,163,184,0.4) 6px, transparent 6px, transparent 12px)'
-                      }} />
-
-                      <div style={{ padding: '16px' }}>
-                        {afternoon.length === 0
-                          ? <div style={{ textAlign: 'center', padding: '16px', fontSize: '0.85rem' }} className="yalla-text-muted-flip">Aucune tâche sur ce créneau.</div>
-                          : afternoon.map(renderScheduleTask)}
-                      </div>
-                    </div>
-
-                    {unscheduled.length > 0 && (
-                      <div style={{ padding: '14px 18px', borderTop: '1px solid rgba(15,23,42,0.1)' }} className="yalla-divider-flip">
-                        <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 8px' }} className="yalla-text-muted-flip">Sans heure de début définie :</p>
-                        {unscheduled.map(renderScheduleTask)}
-                      </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => { const d = new Date(scheduleDate); d.setDate(d.getDate() - 1); setScheduleDate(d.toISOString().slice(0, 10)); }}
+                      style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                    ><IconArrowLeft size={14} /></button>
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      style={styles.scheduleDateInputDark}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { const d = new Date(scheduleDate); d.setDate(d.getDate() + 1); setScheduleDate(d.toISOString().slice(0, 10)); }}
+                      style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                    ><IconArrowRight size={14} /></button>
+                    {scheduleDate !== todayISO() && (
+                      <button type="button" onClick={() => setScheduleDate(todayISO())} style={styles.scheduleTodayBtnDark}>Aujourd'hui</button>
                     )}
                   </div>
-                );
-              })()}
+                </div>
+              </div>
+
+              <div style={{ padding: '28px 32px 32px' }}>
+                {(() => {
+                  /* ---- Layout constants: 08:30 → 17:30 visual range, fluid % scaled ---- */
+                  const RANGE_START = 8 * 60 + 30;   // 510
+                  const RANGE_END = 17 * 60 + 30;    // 1050
+                  const RANGE_MIN = RANGE_END - RANGE_START; // 540
+                  const ROW_HEIGHT = 68;
+                  const WHOLE_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+                  const pctNum = (minutes) => ((minutes - RANGE_START) / RANGE_MIN) * 100;
+                  const pct = (minutes) => `${pctNum(minutes)}%`;
+
+                  const toMinutes = (hhmm) => {
+                    if (!hhmm || typeof hhmm !== 'string' || !hhmm.includes(':')) return null;
+                    const [h, m] = hhmm.split(':').map(Number);
+                    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+                    return h * 60 + m;
+                  };
+
+                  const dayTasks = (tasks || []).filter(t => t.date === scheduleDate);
+                  const scheduled = dayTasks
+                    .map(t => {
+                      const start = toMinutes(t.started_at);
+                      if (start === null) return null;
+                      let end = toMinutes(t.finished_at);
+                      if (end === null || end <= start) end = start + 45; // default block length
+                      return { ...t, _start: start, _end: end };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a._start - b._start || a._end - b._end);
+                  const unscheduled = dayTasks.filter(t => !toMinutes(t.started_at));
+
+                  /* ---- Greedy row assignment so overlapping tasks stack into new rows ---- */
+                  const rowEnds = []; // last end-time occupying each row
+                  const positioned = scheduled.map(t => {
+                    let row = rowEnds.findIndex(end => end <= t._start);
+                    if (row === -1) { row = rowEnds.length; rowEnds.push(t._end); }
+                    else { rowEnds[row] = t._end; }
+                    return { ...t, _row: row };
+                  });
+                  const rowCount = Math.max(rowEnds.length, 1);
+                  const TRACK_HEIGHT = rowCount * ROW_HEIGHT;
+
+                  const clampX = (min) => Math.min(Math.max(min, RANGE_START), RANGE_END);
+
+                  const now = new Date();
+                  const isToday = scheduleDate === todayISO();
+                  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                  const showNowLine = isToday && nowMinutes >= RANGE_START && nowMinutes <= RANGE_END;
+
+                  const totalPlannedMin = scheduled.reduce((sum, t) => sum + (t._end - t._start), 0);
+                  const totalHours = Math.floor(totalPlannedMin / 60);
+                  const totalMins = totalPlannedMin % 60;
+                  const doneCount = scheduled.filter(t => t.status === 'Terminé').length;
+
+                  return (
+                    <>
+                      {/* Summary strip + legend */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '18px' }}>
+                        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700 }} className="yalla-text-flip">
+                            {scheduled.length} shooting{scheduled.length !== 1 ? 's' : ''} programmé{scheduled.length !== 1 ? 's' : ''}
+                          </span>
+                          {totalPlannedMin > 0 && (
+                            <span style={{ fontSize: '0.82rem' }} className="yalla-text-muted-flip">
+                              {totalHours > 0 ? `${totalHours}h` : ''}{totalMins > 0 ? `${totalMins}m` : (totalHours === 0 ? '0m' : '')} planifiées
+                            </span>
+                          )}
+                          {scheduled.length > 0 && (
+                            <span style={{ fontSize: '0.82rem' }} className="yalla-text-muted-flip">{doneCount}/{scheduled.length} terminés</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                          {['Basse', 'Normale', 'Haute', 'Urgente'].map(p => {
+                            const s = getPriorityBadgeStyle(p);
+                            return (
+                              <span key={p} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem', fontWeight: 700 }} className="yalla-text-muted-flip">
+                                <span style={{ width: '8px', height: '8px', borderRadius: '3px', backgroundColor: s.color, display: 'inline-block' }} />{p}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Hour ruler */}
+                      <div style={{ position: 'relative', height: '20px', marginBottom: '2px' }}>
+                        <span style={{ position: 'absolute', left: '0%', fontSize: '0.7rem', fontWeight: 800 }} className="yalla-text-flip">08:30</span>
+                        {WHOLE_HOURS.slice(0, -1).map(h => (
+                          <span
+                            key={h}
+                            style={{ position: 'absolute', left: pct(h * 60), transform: 'translateX(-50%)', fontSize: '0.7rem', fontWeight: 700 }}
+                            className="yalla-text-muted-flip"
+                          >{String(h).padStart(2, '0')}:00</span>
+                        ))}
+                        <span style={{ position: 'absolute', right: '0%', fontSize: '0.7rem', fontWeight: 800 }} className="yalla-text-flip">17:30</span>
+                      </div>
+
+                      {/* Timeline track */}
+                      <div
+                        style={{
+                          position: 'relative', width: '100%', height: `${TRACK_HEIGHT}px`,
+                          borderRadius: '14px', border: '1px solid rgba(15,23,42,0.1)', overflow: 'hidden',
+                          boxShadow: 'inset 0 1px 3px rgba(15,23,42,0.04)'
+                        }}
+                        className="yalla-divider-flip yalla-row-flip"
+                      >
+                        {/* Zebra row shading */}
+                        {Array.from({ length: rowCount }).map((_, i) => (
+                          i % 2 === 1 && (
+                            <div key={i} style={{
+                              position: 'absolute', left: 0, right: 0, top: `${i * ROW_HEIGHT}px`, height: `${ROW_HEIGHT}px`,
+                              backgroundColor: 'rgba(148,163,184,0.05)', pointerEvents: 'none'
+                            }} />
+                          )
+                        ))}
+
+                        {/* Hour gridlines */}
+                        <div style={{ position: 'absolute', top: 0, bottom: 0, left: '0%', borderLeft: '1px solid rgba(148,163,184,0.35)' }} />
+                        {WHOLE_HOURS.map(h => (
+                          <div key={h} style={{
+                            position: 'absolute', top: 0, bottom: 0, left: pct(h * 60),
+                            borderLeft: '1px solid rgba(148,163,184,0.28)'
+                          }} />
+                        ))}
+
+                        {/* Lunch break shading 13:00–14:00 */}
+                        <div style={{
+                          position: 'absolute', top: 0, bottom: 0,
+                          left: pct(13 * 60), width: `${pctNum(14 * 60) - pctNum(13 * 60)}%`,
+                          background: 'repeating-linear-gradient(135deg, rgba(148,163,184,0.12) 0, rgba(148,163,184,0.12) 6px, transparent 6px, transparent 12px)',
+                          pointerEvents: 'none', zIndex: 1
+                        }}>
+                          <span style={{ position: 'absolute', top: '6px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em', whiteSpace: 'nowrap' }} className="yalla-text-muted-flip">PAUSE</span>
+                        </div>
+
+                        {/* Current time indicator */}
+                        {showNowLine && (
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0, left: pct(nowMinutes),
+                            borderLeft: '2px solid #ef4444', zIndex: 6
+                          }}>
+                            <span style={styles.scheduleNowDot} />
+                            <span style={{
+                              position: 'absolute', top: '-21px', left: '6px', fontSize: '0.62rem', fontWeight: 800,
+                              color: '#ef4444', whiteSpace: 'nowrap'
+                            }}>{now.toTimeString().slice(0, 5)}</span>
+                          </div>
+                        )}
+
+                        {/* Task blocks */}
+                        {positioned.length === 0 ? (
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ width: '46px', height: '46px', borderRadius: '50%', backgroundColor: 'rgba(148,163,184,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <IconCalendar size={20} style={{ opacity: 0.5 }} />
+                            </div>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }} className="yalla-text-muted-flip">Aucun shooting programmé ce jour-là</span>
+                          </div>
+                        ) : positioned.map(t => {
+                          const startClamped = clampX(t._start);
+                          const endClamped = clampX(t._end);
+                          const durationMin = endClamped - startClamped;
+                          const priorityStyle = getPriorityBadgeStyle(t.priority);
+                          const isDone = t.status === 'Terminé';
+                          const isInProgress = t.status === 'En cours';
+                          return (
+                            <div
+                              key={t.id}
+                              title={`${t.title} · ${t.started_at}${t.finished_at ? ' – ' + t.finished_at : ''}`}
+                              style={{
+                                position: 'absolute',
+                                left: pct(startClamped),
+                                width: `calc(${pct(endClamped)} - ${pct(startClamped)})`,
+                                minWidth: '58px',
+                                top: `${t._row * ROW_HEIGHT + 7}px`, height: `${ROW_HEIGHT - 14}px`,
+                                background: `linear-gradient(160deg, ${priorityStyle.backgroundColor} 0%, ${priorityStyle.backgroundColor}cc 100%)`,
+                                borderLeft: `4px solid ${priorityStyle.color}`,
+                                borderRadius: '10px',
+                                padding: '7px 11px',
+                                overflow: 'hidden',
+                                cursor: 'default',
+                                opacity: isDone ? 0.68 : 1,
+                                boxShadow: '0 2px 6px rgba(15,23,42,0.1)',
+                                display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center',
+                                zIndex: 2
+                              }}
+                              className="yalla-row-card"
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.76rem', fontWeight: 800, color: priorityStyle.color, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {isDone ? <IconCheck size={11} /> : isInProgress ? <IconZap size={11} /> : <IconCamera size={11} />}
+                                {t.title}
+                              </span>
+                              {durationMin >= 35 && (
+                                <span style={{ fontSize: '0.66rem', fontWeight: 700, color: priorityStyle.color, opacity: 0.85, whiteSpace: 'nowrap' }}>
+                                  {t.started_at}{t.finished_at ? ` – ${t.finished_at}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {(() => {
+                  const dayTasks = (tasks || []).filter(t => t.date === scheduleDate);
+                  const unscheduled = dayTasks.filter(t => !t.started_at || !t.started_at.includes(':'));
+                  if (unscheduled.length === 0) return null;
+                  return (
+                    <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(15,23,42,0.08)' }} className="yalla-divider-flip">
+                      <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }} className="yalla-text-muted-flip">
+                        <IconAlertTriangle size={13} /> Sans heure de début définie
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {unscheduled.map(t => (
+                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '10px', flexWrap: 'wrap' }} className="yalla-row-card yalla-row-flip">
+                            <span style={{ flex: 1, fontSize: '0.88rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
+                            <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
+                            <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
             </div>
           )}
         </div>
@@ -1630,6 +1816,13 @@ const styles = {
   primaryAdminConnectButton: { backgroundColor: '#2b3e9a', color: 'white', border: 'none', borderRadius: '10px', padding: '15px', fontSize: '0.98rem', fontWeight: '700', cursor: 'pointer', marginTop: '10px', width: '100%', boxShadow: '0 4px 14px rgba(43, 62, 154, 0.22)' },
   viewTabButton: { display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 18px', borderRadius: '10px', border: 'none', fontWeight: '700', fontSize: '0.86rem', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.7)', color: '#64748b' },
   viewTabButtonActive: { backgroundColor: '#2b3e9a', color: '#ffffff', boxShadow: '0 4px 14px rgba(43, 62, 154, 0.25)' },
+  scheduleNavArrow: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', borderRadius: '9px', border: '1px solid rgba(0,0,0,0.08)', backgroundColor: '#fff', color: '#475569', cursor: 'pointer', flexShrink: 0 },
+  scheduleTodayBtn: { padding: '8px 14px', borderRadius: '9px', border: '1px solid rgba(0,0,0,0.08)', backgroundColor: 'transparent', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' },
+  scheduleHeaderStrip: { background: 'linear-gradient(120deg, #2b3e9a 0%, #4338ca 55%, #6d28d9 100%)', padding: '22px 26px' },
+  scheduleNavArrowDark: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', borderRadius: '9px', border: '1px solid rgba(255,255,255,0.25)', backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer', flexShrink: 0 },
+  scheduleDateInputDark: { padding: '8px 12px', borderRadius: '9px', border: '1px solid rgba(255,255,255,0.25)', backgroundColor: 'rgba(255,255,255,0.12)', color: '#fff', fontWeight: 600, fontSize: '0.85rem', outline: 'none' },
+  scheduleTodayBtnDark: { padding: '8px 14px', borderRadius: '9px', border: '1px solid rgba(255,255,255,0.3)', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' },
+  scheduleNowDot: { position: 'absolute', top: '-5px', left: '-5px', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444', boxShadow: '0 0 0 rgba(239, 68, 68, 0.6)', animation: 'yallaPulse 1.8s ease-out infinite' },
 
   dashboardContainer: { width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', padding: '20px', boxSizing: 'border-box' },
   adminLayout: { width: '94%', maxWidth: '1400px', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' },
