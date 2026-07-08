@@ -173,6 +173,25 @@ function App() {
   const [employeeSubView, setEmployeeSubView] = useState('list'); // 'list' | 'schedule'
   const [scheduleDate, setScheduleDate] = useState(todayISO());
 
+  // --- Admin "Planning des Employés" view: pick any employee, see their Gantt schedule ---
+  const [planningSelectedUserId, setPlanningSelectedUserId] = useState('');
+  const [planningDate, setPlanningDate] = useState(todayISO());
+  const [planningTasks, setPlanningTasks] = useState([]);
+  const [planningLoading, setPlanningLoading] = useState(false);
+
+  const fetchPlanningTasksForUser = async (userId) => {
+    if (!userId) { setPlanningTasks([]); return; }
+    setPlanningLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/${userId}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setPlanningTasks(Array.isArray(data) ? data : []);
+      }
+    } catch (err) { console.error(err); }
+    finally { setPlanningLoading(false); }
+  };
+
   const [loadingLedgers, setLoadingLedgers] = useState(false);
 
   // Dark mode
@@ -261,7 +280,15 @@ function App() {
       fetchAdminDashboardLedgers();
       fetchAdminStats();
     }
+    if (currentView === 'admin_planning') {
+      if (!teamList.length) fetchAdminDashboardLedgers(true);
+      if (planningSelectedUserId) fetchPlanningTasksForUser(planningSelectedUserId);
+    }
   }, [currentView]);
+
+  useEffect(() => {
+    if (currentView === 'admin_planning') fetchPlanningTasksForUser(planningSelectedUserId);
+  }, [planningSelectedUserId]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -703,9 +730,9 @@ function App() {
   return (
     <div style={{
       ...styles.backgroundWorkspace,
-      alignItems: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? 'flex-start' : 'center',
-      padding: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? '40px 20px' : '0px',
-      paddingLeft: (currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics') ? '272px' : (currentView.includes('dashboard') ? '20px' : '0px')
+      alignItems: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics' || currentView === 'admin_planning') ? 'flex-start' : 'center',
+      padding: (currentView.includes('dashboard') || currentView === 'admin_tracking' || currentView === 'admin_analytics' || currentView === 'admin_planning') ? '40px 20px' : '0px',
+      paddingLeft: (currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics' || currentView === 'admin_planning') ? '272px' : (currentView.includes('dashboard') ? '20px' : '0px')
     }} className="yalla-bg-flip">
       <style>{`
         html, body { margin:0; padding:0; width:100%; min-height:100%; font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
@@ -810,7 +837,7 @@ function App() {
       `}</style>
 
       {/* ADMIN SIDEBAR NAVIGATION */}
-      {(currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics') && (
+      {(currentView === 'admin_dashboard' || currentView === 'admin_tracking' || currentView === 'admin_analytics' || currentView === 'admin_planning') && (
         <div style={styles.adminSidebar} className="yalla-sidebar yalla-sidebar-flip">
           <div style={styles.sidebarBrandRow}>
             <div style={styles.sidebarBrandBadge} className="yalla-brand-badge"><IconLayers size={16} /></div>
@@ -838,6 +865,13 @@ function App() {
               onClick={() => setCurrentView('admin_analytics')}
             >
               <IconTarget size={16} /> Analytics
+            </button>
+            <button
+              style={{ ...styles.sidebarNavItem, ...(currentView === 'admin_planning' ? styles.sidebarNavItemActive : {}) }}
+              className="yalla-nav-btn"
+              onClick={() => setCurrentView('admin_planning')}
+            >
+              <IconClock size={16} /> Planning des Employés
             </button>
           </div>
 
@@ -2090,6 +2124,294 @@ function App() {
                 </div>
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {currentView === 'admin_planning' && (
+        <div style={styles.adminLayout}>
+          <div style={styles.dashHeader}>
+            <div>
+              <h1 style={{ ...styles.mainHeading, display: 'flex', alignItems: 'center', gap: '10px' }} className="yalla-text-flip"><IconClock size={26} /> Planning des Employés</h1>
+              <p style={styles.subHeading} className="yalla-text-muted-flip">Consultez le planning journalier de n'importe quel collaborateur</p>
+            </div>
+          </div>
+
+          <div style={{ ...styles.premiumControlBlock, marginBottom: '20px' }} className="yalla-panel yalla-surface-flip">
+            <label style={styles.fieldInputLabel} className="yalla-text-flip">Collaborateur</label>
+            <select
+              value={planningSelectedUserId}
+              onChange={(e) => setPlanningSelectedUserId(e.target.value)}
+              style={{ ...styles.pillInput, maxWidth: '360px' }}
+              className="yalla-input-flip"
+            >
+              <option value="">-- Choisir un collaborateur --</option>
+              {(teamList || []).map(u => (
+                <option key={u.id} value={u.id}>{u.name} ({u.sub_role === 'cm' ? 'CM' : 'Production'})</option>
+              ))}
+            </select>
+          </div>
+
+          {!planningSelectedUserId ? (
+            <div style={{ ...styles.premiumUserCard, textAlign: 'center', padding: '48px 24px' }} className="yalla-surface-flip">
+              <span className="yalla-text-muted-flip">Sélectionnez un collaborateur pour afficher son planning.</span>
+            </div>
+          ) : planningLoading ? (
+            <SkeletonAnalytics />
+          ) : (
+            <div style={{ position: 'relative', left: '50%', transform: 'translateX(-50%)', width: 'min(1180px, 94vw)' }}>
+            <div style={{ ...styles.premiumUserCard, padding: 0, overflow: 'hidden' }} className="yalla-surface-flip">
+              <div style={styles.scheduleHeaderStrip}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '10px', textTransform: 'capitalize' }}>
+                      <IconClock size={20} />
+                      {new Date(planningDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    </h2>
+                    <p style={{ margin: '6px 0 0 30px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.75)' }}>
+                      Shootings de {(teamList.find(u => String(u.id) === String(planningSelectedUserId)) || {}).name || 'ce collaborateur'} positionnés selon leur heure de début et de fin
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => { const d = new Date(planningDate); d.setDate(d.getDate() - 1); setPlanningDate(d.toISOString().slice(0, 10)); }}
+                      style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                    ><IconArrowLeft size={14} /></button>
+                    <input
+                      type="date"
+                      value={planningDate}
+                      onChange={(e) => setPlanningDate(e.target.value)}
+                      style={styles.scheduleDateInputDark}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { const d = new Date(planningDate); d.setDate(d.getDate() + 1); setPlanningDate(d.toISOString().slice(0, 10)); }}
+                      style={styles.scheduleNavArrowDark} className="yalla-icon-btn"
+                    ><IconArrowRight size={14} /></button>
+                    {planningDate !== todayISO() && (
+                      <button type="button" onClick={() => setPlanningDate(todayISO())} style={styles.scheduleTodayBtnDark}>Aujourd'hui</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: '28px 32px 32px' }}>
+                {(() => {
+                  const RANGE_START = 8 * 60 + 30;
+                  const RANGE_END = 17 * 60 + 30;
+                  const RANGE_MIN = RANGE_END - RANGE_START;
+                  const ROW_HEIGHT = 68;
+                  const WHOLE_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+                  const pctNum = (minutes) => ((minutes - RANGE_START) / RANGE_MIN) * 100;
+                  const pct = (minutes) => `${pctNum(minutes)}%`;
+
+                  const toMinutes = (hhmm) => {
+                    if (!hhmm || typeof hhmm !== 'string' || !hhmm.includes(':')) return null;
+                    const [h, m] = hhmm.split(':').map(Number);
+                    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+                    return h * 60 + m;
+                  };
+
+                  const dayTasks = (planningTasks || []).filter(t => t.date === planningDate);
+                  const scheduled = dayTasks
+                    .map(t => {
+                      const start = toMinutes(t.started_at);
+                      if (start === null) return null;
+                      let end = toMinutes(t.finished_at);
+                      if (end === null || end <= start) end = start + 45;
+                      return { ...t, _start: start, _end: end };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a._start - b._start || a._end - b._end);
+
+                  const rowEnds = [];
+                  const positioned = scheduled.map(t => {
+                    let row = rowEnds.findIndex(end => end <= t._start);
+                    if (row === -1) { row = rowEnds.length; rowEnds.push(t._end); }
+                    else { rowEnds[row] = t._end; }
+                    return { ...t, _row: row };
+                  });
+                  const rowCount = Math.max(rowEnds.length, 1);
+                  const TRACK_HEIGHT = rowCount * ROW_HEIGHT;
+
+                  const clampX = (min) => Math.min(Math.max(min, RANGE_START), RANGE_END);
+
+                  const now = new Date();
+                  const isToday = planningDate === todayISO();
+                  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                  const showNowLine = isToday && nowMinutes >= RANGE_START && nowMinutes <= RANGE_END;
+
+                  const totalPlannedMin = scheduled.reduce((sum, t) => sum + (t._end - t._start), 0);
+                  const totalHours = Math.floor(totalPlannedMin / 60);
+                  const totalMins = totalPlannedMin % 60;
+                  const doneCount = scheduled.filter(t => t.status === 'Terminé').length;
+
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '18px' }}>
+                        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700 }} className="yalla-text-flip">
+                            {scheduled.length} shooting{scheduled.length !== 1 ? 's' : ''} programmé{scheduled.length !== 1 ? 's' : ''}
+                          </span>
+                          {totalPlannedMin > 0 && (
+                            <span style={{ fontSize: '0.82rem' }} className="yalla-text-muted-flip">
+                              {totalHours > 0 ? `${totalHours}h` : ''}{totalMins > 0 ? `${totalMins}m` : (totalHours === 0 ? '0m' : '')} planifiées
+                            </span>
+                          )}
+                          {scheduled.length > 0 && (
+                            <span style={{ fontSize: '0.82rem' }} className="yalla-text-muted-flip">{doneCount}/{scheduled.length} terminés</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                          {['Basse', 'Normale', 'Haute', 'Urgente'].map(p => {
+                            const s = getPriorityBadgeStyle(p);
+                            return (
+                              <span key={p} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem', fontWeight: 700 }} className="yalla-text-muted-flip">
+                                <span style={{ width: '8px', height: '8px', borderRadius: '3px', backgroundColor: s.color, display: 'inline-block' }} />{p}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div style={{ position: 'relative', height: '20px', marginBottom: '2px' }}>
+                        <span style={{ position: 'absolute', left: '0%', fontSize: '0.7rem', fontWeight: 800 }} className="yalla-text-flip">08:30</span>
+                        {WHOLE_HOURS.slice(0, -1).map(h => (
+                          <span
+                            key={h}
+                            style={{ position: 'absolute', left: pct(h * 60), transform: 'translateX(-50%)', fontSize: '0.7rem', fontWeight: 700 }}
+                            className="yalla-text-muted-flip"
+                          >{String(h).padStart(2, '0')}:00</span>
+                        ))}
+                        <span style={{ position: 'absolute', right: '0%', fontSize: '0.7rem', fontWeight: 800 }} className="yalla-text-flip">17:30</span>
+                      </div>
+
+                      <div
+                        style={{
+                          position: 'relative', width: '100%', height: `${TRACK_HEIGHT}px`,
+                          borderRadius: '14px', border: '1px solid rgba(15,23,42,0.1)', overflow: 'hidden',
+                          boxShadow: 'inset 0 1px 3px rgba(15,23,42,0.04)'
+                        }}
+                        className="yalla-divider-flip yalla-row-flip"
+                      >
+                        {Array.from({ length: rowCount }).map((_, i) => (
+                          i % 2 === 1 && (
+                            <div key={i} style={{
+                              position: 'absolute', left: 0, right: 0, top: `${i * ROW_HEIGHT}px`, height: `${ROW_HEIGHT}px`,
+                              backgroundColor: 'rgba(148,163,184,0.05)', pointerEvents: 'none'
+                            }} />
+                          )
+                        ))}
+
+                        <div style={{ position: 'absolute', top: 0, bottom: 0, left: '0%', borderLeft: '1px solid rgba(148,163,184,0.35)' }} />
+                        {WHOLE_HOURS.map(h => (
+                          <div key={h} style={{
+                            position: 'absolute', top: 0, bottom: 0, left: pct(h * 60),
+                            borderLeft: '1px solid rgba(148,163,184,0.28)'
+                          }} />
+                        ))}
+
+                        <div style={{
+                          position: 'absolute', top: 0, bottom: 0,
+                          left: pct(13 * 60), width: `${pctNum(14 * 60) - pctNum(13 * 60)}%`,
+                          background: 'repeating-linear-gradient(135deg, rgba(148,163,184,0.12) 0, rgba(148,163,184,0.12) 6px, transparent 6px, transparent 12px)',
+                          pointerEvents: 'none', zIndex: 1
+                        }}>
+                          <span style={{ position: 'absolute', top: '6px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em', whiteSpace: 'nowrap' }} className="yalla-text-muted-flip">PAUSE</span>
+                        </div>
+
+                        {showNowLine && (
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0, left: pct(nowMinutes),
+                            borderLeft: '2px solid #ef4444', zIndex: 6
+                          }}>
+                            <span style={styles.scheduleNowDot} />
+                            <span style={{
+                              position: 'absolute', top: '-21px', left: '6px', fontSize: '0.62rem', fontWeight: 800,
+                              color: '#ef4444', whiteSpace: 'nowrap'
+                            }}>{now.toTimeString().slice(0, 5)}</span>
+                          </div>
+                        )}
+
+                        {positioned.length === 0 ? (
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ width: '46px', height: '46px', borderRadius: '50%', backgroundColor: 'rgba(148,163,184,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <IconCalendar size={20} style={{ opacity: 0.5 }} />
+                            </div>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600 }} className="yalla-text-muted-flip">Aucun shooting programmé ce jour-là</span>
+                          </div>
+                        ) : positioned.map(t => {
+                          const startClamped = clampX(t._start);
+                          const endClamped = clampX(t._end);
+                          const durationMin = endClamped - startClamped;
+                          const priorityStyle = getPriorityBadgeStyle(t.priority);
+                          const isDone = t.status === 'Terminé';
+                          const isInProgress = t.status === 'En cours';
+                          return (
+                            <div
+                              key={t.id}
+                              title={`${t.title} · ${t.started_at}${t.finished_at ? ' – ' + t.finished_at : ''}`}
+                              style={{
+                                position: 'absolute',
+                                left: pct(startClamped),
+                                width: `calc(${pct(endClamped)} - ${pct(startClamped)})`,
+                                minWidth: '58px',
+                                top: `${t._row * ROW_HEIGHT + 7}px`, height: `${ROW_HEIGHT - 14}px`,
+                                background: `linear-gradient(160deg, ${priorityStyle.backgroundColor} 0%, ${priorityStyle.backgroundColor}cc 100%)`,
+                                borderLeft: `4px solid ${priorityStyle.color}`,
+                                borderRadius: '10px',
+                                padding: '7px 11px',
+                                overflow: 'hidden',
+                                cursor: 'default',
+                                opacity: isDone ? 0.68 : 1,
+                                boxShadow: '0 2px 6px rgba(15,23,42,0.1)',
+                                display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center',
+                                zIndex: 2
+                              }}
+                              className="yalla-row-card"
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.76rem', fontWeight: 800, color: priorityStyle.color, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {isDone ? <IconCheck size={11} /> : isInProgress ? <IconZap size={11} /> : <IconCamera size={11} />}
+                                {t.title}
+                              </span>
+                              {durationMin >= 35 && (
+                                <span style={{ fontSize: '0.66rem', fontWeight: 700, color: priorityStyle.color, opacity: 0.85, whiteSpace: 'nowrap' }}>
+                                  {t.started_at}{t.finished_at ? ` – ${t.finished_at}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {(() => {
+                  const dayTasks = (planningTasks || []).filter(t => t.date === planningDate);
+                  const unscheduled = dayTasks.filter(t => !t.started_at || !t.started_at.includes(':'));
+                  if (unscheduled.length === 0) return null;
+                  return (
+                    <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(15,23,42,0.08)' }} className="yalla-divider-flip">
+                      <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }} className="yalla-text-muted-flip">
+                        <IconAlertTriangle size={13} /> Sans heure de début définie
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {unscheduled.map(t => (
+                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '10px', flexWrap: 'wrap' }} className="yalla-row-card yalla-row-flip">
+                            <span style={{ flex: 1, fontSize: '0.88rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
+                            <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
+                            <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            </div>
           )}
         </div>
       )}
