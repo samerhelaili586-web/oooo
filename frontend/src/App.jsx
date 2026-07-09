@@ -276,6 +276,107 @@ function App() {
   const [newEmployeeTaskDate, setNewEmployeeTaskDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [newEmployeeTaskPriority, setNewEmployeeTaskPriority] = useState('Normale');
   const [showCreateShootingModal, setShowCreateShootingModal] = useState(false);
+
+  // --- Quick-schedule popover: give an unscheduled task a start/end time ---
+  const [schedulingTaskId, setSchedulingTaskId] = useState(null);
+  const [quickStart, setQuickStart] = useState('');
+  const [quickEnd, setQuickEnd] = useState('');
+
+  // --- Drag-and-drop scheduling on the "Planning du Jour" timeline ---
+  // Native HTML5 drag/drop (no extra library). Works for two cases:
+  // 1) dragging an unscheduled task chip onto the track to place it
+  // 2) dragging an already-placed bar to a new spot, keeping its duration
+  const SHIFT_WINDOWS_MIN = [[510, 780], [840, 1050]]; // 08:30–13:00, 14:00–17:30
+  const DEFAULT_DRAG_DURATION_MIN = 45;
+  const TIMELINE_RANGE_START_MIN = 510; // 08:30
+  const TIMELINE_RANGE_TOTAL_MIN = 540; // 08:30 -> 17:30
+
+  const minutesToHHMM = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  const clampDropToShift = (startMinutes, durationMinutes) => {
+    let target = SHIFT_WINDOWS_MIN.find(([s, e]) => startMinutes >= s && startMinutes < e);
+    if (!target) {
+      target = SHIFT_WINDOWS_MIN.reduce((closest, win) => {
+        const dist = startMinutes < win[0] ? win[0] - startMinutes : startMinutes - win[1];
+        const closestDist = startMinutes < closest[0] ? closest[0] - startMinutes : startMinutes - closest[1];
+        return dist < closestDist ? win : closest;
+      });
+    }
+    const [shiftStart, shiftEnd] = target;
+    const safeDuration = Math.min(Math.max(durationMinutes, 15), shiftEnd - shiftStart);
+    // Clamp the start so the block fits fully inside the shift — pushing it
+    // earlier near the end of a shift instead of truncating its duration.
+    const start = Math.min(Math.max(startMinutes, shiftStart), shiftEnd - safeDuration);
+    const end = start + safeDuration;
+    return [start, end];
+  };
+
+  const [dragOverTimeline, setDragOverTimeline] = useState(false);
+
+  const handleTimelineDragStart = (e, taskId, durationMinutes) => {
+    e.dataTransfer.setData('text/plain', String(taskId));
+    e.dataTransfer.setData('text/x-duration', String(durationMinutes));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleTimelineDrop = (e) => {
+    e.preventDefault();
+    setDragOverTimeline(false);
+    const taskId = Number(e.dataTransfer.getData('text/plain'));
+    const duration = Number(e.dataTransfer.getData('text/x-duration')) || DEFAULT_DRAG_DURATION_MIN;
+    if (!taskId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const fraction = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    const rawMinutes = TIMELINE_RANGE_START_MIN + fraction * TIMELINE_RANGE_TOTAL_MIN;
+    const snapped = Math.round(rawMinutes / 15) * 15;
+    const [startM, endM] = clampDropToShift(snapped, duration);
+    handleUpdateTaskMetrics(taskId, { started_at: minutesToHHMM(startM), finished_at: minutesToHHMM(endM) });
+  };
+
+  const openQuickSchedule = (taskId) => {
+    setSchedulingTaskId(taskId);
+    setQuickStart('');
+    setQuickEnd('');
+  };
+
+  const submitQuickSchedule = (e, taskId) => {
+    e.preventDefault();
+    if (!quickStart || !quickEnd) return;
+    handleUpdateTaskMetrics(taskId, { started_at: quickStart, finished_at: quickEnd });
+  };
+
+  // --- Clicking an already-placed bar on the timeline: adjust its time ---
+  const [timeEditTaskId, setTimeEditTaskId] = useState(null);
+  const [timeEditStart, setTimeEditStart] = useState('');
+  const [timeEditEnd, setTimeEditEnd] = useState('');
+  const [timeEditError, setTimeEditError] = useState('');
+
+  const openTimeEditModal = (task) => {
+    setTimeEditTaskId(task.id);
+    setTimeEditStart(task.started_at || '');
+    setTimeEditEnd(task.finished_at || '');
+    setTimeEditError('');
+  };
+
+  const submitTimeEdit = async (e) => {
+    e.preventDefault();
+    if (!timeEditStart || !timeEditEnd || !timeEditTaskId) return;
+    setTimeEditError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/tasks/${timeEditTaskId}/metrics`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ started_at: timeEditStart, finished_at: timeEditEnd })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setTimeEditTaskId(null);
+        if (currentUser) fetchEmployeeTasks(currentUser.user_id, true);
+      } else {
+        setTimeEditError(data.message || "Heure invalide.");
+      }
+    } catch (err) { setTimeEditError("Erreur de connexion."); }
+  };
   const [listShowAllDates, setListShowAllDates] = useState(false);
 
   // --- Edit an existing employee-owned shooting (blocked once its date is in the past) ---
@@ -1556,10 +1657,16 @@ function App() {
 
                       {/* Timeline track */}
                       <div
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnter={() => setDragOverTimeline(true)}
+                        onDragLeave={() => setDragOverTimeline(false)}
+                        onDrop={handleTimelineDrop}
                         style={{
                           position: 'relative', width: '100%', height: `${TRACK_HEIGHT}px`,
-                          borderRadius: '14px', border: '1px solid rgba(15,23,42,0.1)', overflow: 'hidden',
-                          boxShadow: 'inset 0 1px 3px rgba(15,23,42,0.04)'
+                          borderRadius: '14px', border: dragOverTimeline ? '2px dashed #2b3e9a' : '1px solid rgba(15,23,42,0.1)', overflow: 'hidden',
+                          boxShadow: 'inset 0 1px 3px rgba(15,23,42,0.04)',
+                          backgroundColor: dragOverTimeline ? 'rgba(43,62,154,0.04)' : undefined,
+                          transition: 'background-color 0.15s ease, border-color 0.15s ease'
                         }}
                         className="yalla-divider-flip yalla-row-flip"
                       >
@@ -1624,7 +1731,10 @@ function App() {
                           return (
                             <div
                               key={t.id}
-                              title={`${t.title} · ${t.started_at}${t.finished_at ? ' – ' + t.finished_at : ''}`}
+                              title={`${t.title} · ${t.started_at}${t.finished_at ? ' – ' + t.finished_at : ''} — cliquer pour modifier l'heure`}
+                              onClick={() => openTimeEditModal(t)}
+                              draggable
+                              onDragStart={(e) => handleTimelineDragStart(e, t.id, endClamped - startClamped)}
                               style={{
                                 position: 'absolute',
                                 left: pct(startClamped),
@@ -1636,7 +1746,7 @@ function App() {
                                 borderRadius: '10px',
                                 padding: '7px 11px',
                                 overflow: 'hidden',
-                                cursor: 'default',
+                                cursor: 'grab',
                                 opacity: isDone ? 0.68 : 1,
                                 boxShadow: '0 2px 6px rgba(15,23,42,0.1)',
                                 display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center',
@@ -1667,15 +1777,64 @@ function App() {
                   if (unscheduled.length === 0) return null;
                   return (
                     <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(15,23,42,0.08)' }} className="yalla-divider-flip">
-                      <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }} className="yalla-text-muted-flip">
+                      <p style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '6px' }} className="yalla-text-muted-flip">
                         <IconAlertTriangle size={13} /> Sans heure de début définie
+                      </p>
+                      <p style={{ fontSize: '0.72rem', margin: '0 0 10px' }} className="yalla-text-muted-flip">
+                        Glissez une tâche sur le planning ci-dessus pour la positionner, ou utilisez « Planifier ».
                       </p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {unscheduled.map(t => (
-                          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', borderRadius: '10px', flexWrap: 'wrap' }} className="yalla-row-card yalla-row-flip">
-                            <span style={{ flex: 1, fontSize: '0.88rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
-                            <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
-                            <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
+                          <div
+                            key={t.id}
+                            draggable
+                            onDragStart={(e) => handleTimelineDragStart(e, t.id, DEFAULT_DRAG_DURATION_MIN)}
+                            style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 14px', borderRadius: '10px', cursor: 'grab' }}
+                            className="yalla-row-card yalla-row-flip"
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <IconLayers size={13} style={{ opacity: 0.4, flexShrink: 0 }} />
+                              <span style={{ flex: 1, fontSize: '0.88rem', minWidth: '120px' }} className="yalla-text-flip">{t.title}</span>
+                              <span style={{ ...styles.statusBadge, ...getPriorityBadgeStyle(t.priority), fontSize: '0.7rem', padding: '3px 9px' }}>{t.priority || 'Normale'}</span>
+                              <span style={{ ...styles.statusBadge, ...getStatusBadgeStyle(t.status), fontSize: '0.7rem', padding: '3px 9px' }}>{t.status}</span>
+                              <button
+                                type="button"
+                                onClick={() => schedulingTaskId === t.id ? setSchedulingTaskId(null) : openQuickSchedule(t.id)}
+                                style={{
+                                  fontSize: '0.74rem', fontWeight: '700', padding: '5px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                  backgroundColor: schedulingTaskId === t.id ? '#e2e8f0' : '#2b3e9a',
+                                  color: schedulingTaskId === t.id ? '#334155' : '#ffffff'
+                                }}
+                              >
+                                {schedulingTaskId === t.id ? 'Annuler' : 'Planifier'}
+                              </button>
+                            </div>
+
+                            {schedulingTaskId === t.id && (
+                              <form
+                                onSubmit={(e) => submitQuickSchedule(e, t.id)}
+                                style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px dashed rgba(148,163,184,0.4)' }}
+                              >
+                                <div>
+                                  <label style={{ fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: '3px' }} className="yalla-text-muted-flip">Début</label>
+                                  <input type="time" value={quickStart} onChange={(e) => setQuickStart(e.target.value)} style={{ border: '1px solid #cbd5e1', padding: '5px 7px', borderRadius: '6px', fontSize: '0.82rem' }} required />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: '0.7rem', fontWeight: 600, display: 'block', marginBottom: '3px' }} className="yalla-text-muted-flip">Fin</label>
+                                  <input type="time" value={quickEnd} onChange={(e) => setQuickEnd(e.target.value)} style={{ border: '1px solid #cbd5e1', padding: '5px 7px', borderRadius: '6px', fontSize: '0.82rem' }} required />
+                                </div>
+                                <button type="submit" style={{ fontSize: '0.78rem', fontWeight: 700, padding: '7px 14px', borderRadius: '8px', border: 'none', backgroundColor: '#16a34a', color: '#fff', cursor: 'pointer' }}>
+                                  Placer sur le planning
+                                </button>
+                                <span style={{ fontSize: '0.68rem' }} className="yalla-text-muted-flip">08:30–13:00 ou 14:00–17:30</span>
+                              </form>
+                            )}
+
+                            {timeFieldErrors[t.id] && (
+                              <p style={{ color: '#dc2626', fontSize: '0.74rem', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <IconAlertTriangle size={11} /> {timeFieldErrors[t.id]}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1684,6 +1843,42 @@ function App() {
                 })()}
               </div>
             </div>
+            </div>
+          )}
+
+          {timeEditTaskId !== null && (
+            <div
+              style={{ ...styles.modalOverlay, animation: 'yallaOverlayIn 0.18s ease' }}
+              onClick={() => setTimeEditTaskId(null)}
+            >
+              <div style={{ ...styles.modalCard, maxWidth: '360px', animation: 'yallaModalIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)' }} className="yalla-surface-flip-solid" onClick={(e) => e.stopPropagation()}>
+                <div style={styles.modalHeader}>
+                  <h3 style={{ ...styles.userTaskTitleText, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }} className="yalla-text-flip">
+                    <IconClock size={17} /> Modifier l'heure
+                  </h3>
+                  <button type="button" onClick={() => setTimeEditTaskId(null)} style={styles.modalCloseBtn} className="yalla-icon-btn">
+                    <IconX size={18} />
+                  </button>
+                </div>
+                <form onSubmit={submitTimeEdit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '0.76rem', fontWeight: 600, display: 'block', marginBottom: '4px' }} className="yalla-text-muted-flip">Début</label>
+                      <input type="time" value={timeEditStart} onChange={(e) => setTimeEditStart(e.target.value)} style={styles.premiumInput} className="yalla-input-flip" required />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '0.76rem', fontWeight: 600, display: 'block', marginBottom: '4px' }} className="yalla-text-muted-flip">Fin</label>
+                      <input type="time" value={timeEditEnd} onChange={(e) => setTimeEditEnd(e.target.value)} style={styles.premiumInput} className="yalla-input-flip" required />
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', margin: 0 }} className="yalla-text-muted-flip">Créneaux autorisés : 08:30–13:00 ou 14:00–17:30</p>
+                  {timeEditError && <div style={styles.errorBanner}>{timeEditError}</div>}
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setTimeEditTaskId(null)} style={styles.cancelButton} className="yalla-ghost-btn">Annuler</button>
+                    <button type="submit" style={{ ...styles.commentBarSubmitBtn, padding: '10px 18px', cursor: 'pointer' }} className="yalla-primary-btn">Enregistrer</button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </div>
