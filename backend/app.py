@@ -155,6 +155,21 @@ class ScheduleEntry(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class Notification(db.Model):
+    """In-app notification for an employee (e.g. a new shooting was assigned)."""
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    message = db.Column(db.String(300), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=True)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def create_notification(user_id, message, task_id=None):
+    db.session.add(Notification(user_id=user_id, message=message, task_id=task_id))
+
+
 # --- SEED HELPERS ---
 def seed_initial_accounts():
     """Pre-seed test accounts so the tables compile smoothly on first init."""
@@ -291,6 +306,41 @@ def admin_reset_password():
     admin.reset_code_expires = None
     db.session.commit()
     return jsonify({"status": "success", "message": "Mot de passe mis à jour."}), 200
+
+
+@app.route('/api/notifications/<int:user_id>', methods=['GET'])
+def get_notifications(user_id):
+    """Most recent 30 notifications for this employee, newest first."""
+    notifs = (Notification.query
+              .filter_by(user_id=user_id)
+              .order_by(Notification.created_at.desc())
+              .limit(30).all())
+    unread_count = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+    return jsonify({
+        "unread_count": unread_count,
+        "notifications": [{
+            "id": n.id,
+            "message": n.message,
+            "task_id": n.task_id,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat()
+        } for n in notifs]
+    }), 200
+
+
+@app.route('/api/notifications/<int:notif_id>/read', methods=['POST'])
+def mark_notification_read(notif_id):
+    notif = Notification.query.get_or_404(notif_id)
+    notif.is_read = True
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
+
+@app.route('/api/notifications/<int:user_id>/read-all', methods=['POST'])
+def mark_all_notifications_read(user_id):
+    Notification.query.filter_by(user_id=user_id, is_read=False).update({"is_read": True})
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
 
 
 @app.route('/api/tasks/<int:user_id>', methods=['GET'])
@@ -567,14 +617,21 @@ def handle_admin_tasks():
         if is_date_in_past(data.get('date')):
             return jsonify({"status": "error", "message": "La date ne peut pas être antérieure à aujourd'hui."}), 400
 
-        db.session.add(Task(
+        new_task = Task(
             title=title,
             description=data.get('description'),
             date=data.get('date'),
             assigned_to_id=assigned_to_id,
             is_self_created=False,
             priority=data.get('priority') or 'Normale'
-        ))
+        )
+        db.session.add(new_task)
+        db.session.flush()  # get new_task.id before commit
+        create_notification(
+            assigned_to_id,
+            f"Nouveau shooting assigné : « {title} »" + (f" — {data.get('date')}" if data.get('date') else ""),
+            task_id=new_task.id
+        )
         db.session.commit()
         return jsonify({"status": "success"}), 201
     all_tasks = Task.query.all()
@@ -609,6 +666,12 @@ def update_or_delete_task(task_id):
         task.title = title
         task.description = data.get('description')
         task.date = data.get('date')
+        if assigned_to_id != task.assigned_to_id:
+            create_notification(
+                assigned_to_id,
+                f"Shooting réassigné : « {title} »" + (f" — {data.get('date')}" if data.get('date') else ""),
+                task_id=task.id
+            )
         task.assigned_to_id = assigned_to_id
         if 'priority' in data: task.priority = data.get('priority') or 'Normale'
     db.session.commit()

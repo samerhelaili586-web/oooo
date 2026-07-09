@@ -16,6 +16,7 @@ const IconLock = (p) => <Icon {...p} path={<><rect x="3" y="11" width="18" heigh
 const IconArrowLeft = (p) => <Icon {...p} path={<><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></>} />;
 const IconArrowRight = (p) => <Icon {...p} path={<><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></>} />;
 const IconLogout = (p) => <Icon {...p} path={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>} />;
+const IconBell = (p) => <Icon {...p} path={<><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></>} />;
 const IconPlus = (p) => <Icon {...p} path={<><path d="M12 5v14" /><path d="M5 12h14" /></>} />;
 const IconCamera = (p) => <Icon {...p} path={<><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></>} />;
 const IconCalendar = (p) => <Icon {...p} path={<><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>} />;
@@ -146,6 +147,36 @@ const API_BASE = import.meta.env?.VITE_API_URL || 'http://127.0.0.1:5050';
 function App() {
   const [currentView, setCurrentView] = useState('login');
   const [currentUser, setCurrentUser] = useState(null);
+
+  // --- Toast popups (top-right): welcome message + "new task" alerts on login ---
+  const [toasts, setToasts] = useState([]); // [{ id, title, message }]
+
+  const pushToast = (title, message) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, title, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
+  const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  // Fires once right after an employee logs in: a welcome toast, plus one toast
+  // per task notification they haven't seen yet (then marks them as read).
+  const showLoginToasts = async (user) => {
+    if (!user?.user_id) return;
+    pushToast('Bienvenue', `Bienvenue, ${user.name} !`);
+    try {
+      const res = await fetch(`${API_BASE}/api/notifications/${user.user_id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const unread = (data.notifications || []).filter(n => !n.is_read);
+        unread.forEach((n, i) => {
+          setTimeout(() => pushToast('Nouvelle mission', n.message), 700 * (i + 1));
+        });
+        if (unread.length > 0) {
+          fetch(`${API_BASE}/api/notifications/${user.user_id}/read-all`, { method: 'POST' }).catch(() => {});
+        }
+      }
+    } catch (err) { console.error(err); }
+  };
   const [errorMessage, setErrorMessage] = useState('');
 
   // Access credentials form states
@@ -178,6 +209,7 @@ function App() {
   const [planningDate, setPlanningDate] = useState(todayISO());
   const [planningTasks, setPlanningTasks] = useState([]);
   const [planningLoading, setPlanningLoading] = useState(false);
+  const [planningViewMode, setPlanningViewMode] = useState('day'); // 'day' | 'week'
 
   const fetchPlanningTasksForUser = async (userId) => {
     if (!userId) { setPlanningTasks([]); return; }
@@ -310,6 +342,7 @@ function App() {
         setCurrentUser(data);
         fetchEmployeeTasks(data.user_id);
         setCurrentView('employee_dashboard');
+        showLoginToasts(data);
       } else { setErrorMessage(data.message); }
     } catch (err) { setErrorMessage("Erreur de connexion."); }
   };
@@ -800,6 +833,7 @@ function App() {
         @keyframes yallaModalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes yallaOverlayIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes yallaPulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); } 70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        @keyframes yallaToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
 
         /* Skeleton shimmer */
         @keyframes yallaShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
@@ -2138,18 +2172,44 @@ function App() {
           </div>
 
           <div style={{ ...styles.premiumControlBlock, marginBottom: '20px' }} className="yalla-panel yalla-surface-flip">
-            <label style={styles.fieldInputLabel} className="yalla-text-flip">Collaborateur</label>
-            <select
-              value={planningSelectedUserId}
-              onChange={(e) => setPlanningSelectedUserId(e.target.value)}
-              style={{ ...styles.pillInput, maxWidth: '360px' }}
-              className="yalla-input-flip"
-            >
-              <option value="">-- Choisir un collaborateur --</option>
-              {(teamList || []).map(u => (
-                <option key={u.id} value={u.id}>{u.name} ({u.sub_role === 'cm' ? 'CM' : 'Production'})</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '18px', alignItems: 'flex-end' }}>
+              <div>
+                <label style={styles.fieldInputLabel} className="yalla-text-flip">Collaborateur</label>
+                <select
+                  value={planningSelectedUserId}
+                  onChange={(e) => setPlanningSelectedUserId(e.target.value)}
+                  style={{ ...styles.pillInput, maxWidth: '360px' }}
+                  className="yalla-input-flip"
+                >
+                  <option value="">-- Choisir un collaborateur --</option>
+                  {(teamList || []).map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.sub_role === 'cm' ? 'CM' : 'Production'})</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', padding: '4px', borderRadius: '11px', backgroundColor: 'rgba(148,163,184,0.12)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPlanningViewMode('day')}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer',
+                    backgroundColor: planningViewMode === 'day' ? '#4338ca' : 'transparent',
+                    color: planningViewMode === 'day' ? '#fff' : 'inherit'
+                  }}
+                  className={planningViewMode === 'day' ? '' : 'yalla-text-muted-flip'}
+                >Jour</button>
+                <button
+                  type="button"
+                  onClick={() => setPlanningViewMode('week')}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer',
+                    backgroundColor: planningViewMode === 'week' ? '#4338ca' : 'transparent',
+                    color: planningViewMode === 'week' ? '#fff' : 'inherit'
+                  }}
+                  className={planningViewMode === 'week' ? '' : 'yalla-text-muted-flip'}
+                >Semaine</button>
+              </div>
+            </div>
           </div>
 
           {!planningSelectedUserId ? (
@@ -2158,6 +2218,102 @@ function App() {
             </div>
           ) : planningLoading ? (
             <SkeletonAnalytics />
+          ) : planningViewMode === 'week' ? (
+            <div style={{ position: 'relative', left: '50%', transform: 'translateX(-50%)', width: 'min(1180px, 96vw)' }}>
+            <div style={{ ...styles.premiumUserCard, padding: 0, overflow: 'hidden' }} className="yalla-surface-flip">
+              {(() => {
+                // Monday-start week containing planningDate
+                const base = new Date(planningDate + 'T00:00:00');
+                const dow = (base.getDay() + 6) % 7; // 0 = Monday
+                const monday = new Date(base); monday.setDate(base.getDate() - dow);
+                const weekDays = Array.from({ length: 7 }).map((_, i) => {
+                  const d = new Date(monday); d.setDate(monday.getDate() + i);
+                  return d.toISOString().slice(0, 10);
+                });
+                const shiftWeek = (delta) => {
+                  const d = new Date(planningDate + 'T00:00:00');
+                  d.setDate(d.getDate() + delta * 7);
+                  setPlanningDate(d.toISOString().slice(0, 10));
+                };
+                const weekLabel = `${new Date(weekDays[0] + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${new Date(weekDays[6] + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+                const empName = (teamList.find(u => String(u.id) === String(planningSelectedUserId)) || {}).name || 'ce collaborateur';
+
+                return (
+                  <>
+                    <div style={styles.scheduleHeaderStrip}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                        <div>
+                          <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <IconClock size={20} /> Semaine du {weekLabel}
+                          </h2>
+                          <p style={{ margin: '6px 0 0 30px', fontSize: '0.82rem', color: 'rgba(255,255,255,0.75)' }}>
+                            Charge de travail de {empName} sur 7 jours
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button type="button" onClick={() => shiftWeek(-1)} style={styles.scheduleNavArrowDark} className="yalla-icon-btn"><IconArrowLeft size={14} /></button>
+                          <button type="button" onClick={() => shiftWeek(1)} style={styles.scheduleNavArrowDark} className="yalla-icon-btn"><IconArrowRight size={14} /></button>
+                          {!weekDays.includes(todayISO()) && (
+                            <button type="button" onClick={() => setPlanningDate(todayISO())} style={styles.scheduleTodayBtnDark}>Cette semaine</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', backgroundColor: 'rgba(148,163,184,0.15)' }}>
+                      {weekDays.map(dateStr => {
+                        const dayTasks = (planningTasks || []).filter(t => t.date === dateStr)
+                          .sort((a, b) => (a.started_at || 'ZZ').localeCompare(b.started_at || 'ZZ'));
+                        const isToday = dateStr === todayISO();
+                        const dObj = new Date(dateStr + 'T00:00:00');
+                        return (
+                          <div key={dateStr} style={{ minHeight: '260px', padding: '12px 9px', backgroundColor: isToday ? 'rgba(99,102,241,0.06)' : 'transparent' }} className="yalla-surface-flip">
+                            <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+                              <p style={{ margin: 0, fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }} className="yalla-text-muted-flip">
+                                {dObj.toLocaleDateString('fr-FR', { weekday: 'short' })}
+                              </p>
+                              <p style={{
+                                margin: '2px 0 0', fontSize: '0.95rem', fontWeight: 800, display: 'inline-flex',
+                                width: '26px', height: '26px', borderRadius: '50%', alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: isToday ? '#4338ca' : 'transparent', color: isToday ? '#fff' : 'inherit'
+                              }} className={isToday ? '' : 'yalla-text-flip'}>{dObj.getDate()}</p>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {dayTasks.length === 0 ? (
+                                <p style={{ fontSize: '0.7rem', textAlign: 'center', margin: '10px 0 0', opacity: 0.5 }} className="yalla-text-muted-flip">—</p>
+                              ) : dayTasks.map(t => {
+                                const priorityStyle = getPriorityBadgeStyle(t.priority);
+                                const isDone = t.status === 'Terminé';
+                                return (
+                                  <div
+                                    key={t.id}
+                                    title={t.title}
+                                    style={{
+                                      borderRadius: '8px', padding: '6px 8px',
+                                      backgroundColor: priorityStyle.backgroundColor,
+                                      borderLeft: `3px solid ${priorityStyle.color}`,
+                                      opacity: isDone ? 0.6 : 1
+                                    }}
+                                  >
+                                    <p style={{ margin: 0, fontSize: '0.72rem', fontWeight: 700, color: priorityStyle.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {t.title}
+                                    </p>
+                                    {t.started_at && (
+                                      <p style={{ margin: '2px 0 0', fontSize: '0.65rem', color: priorityStyle.color, opacity: 0.85 }}>{t.started_at}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            </div>
           ) : (
             <div style={{ position: 'relative', left: '50%', transform: 'translateX(-50%)', width: 'min(1180px, 94vw)' }}>
             <div style={{ ...styles.premiumUserCard, padding: 0, overflow: 'hidden' }} className="yalla-surface-flip">
@@ -2417,6 +2573,27 @@ function App() {
       )}
 
       <ConfirmDialog />
+
+      {/* Toast popups: top-right, auto-dismiss after 5s */}
+      <div style={{
+        position: 'fixed', top: '20px', right: '20px', zIndex: 999,
+        display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '320px'
+      }}>
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            onClick={() => dismissToast(t.id)}
+            style={{
+              backgroundColor: '#1e1b4b', color: '#fff', borderRadius: '12px',
+              padding: '14px 16px', boxShadow: '0 10px 28px rgba(15,23,42,0.28)',
+              cursor: 'pointer', animation: 'yallaToastIn 0.25s ease-out'
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 800, opacity: 0.85 }}>{t.title}</p>
+            <p style={{ margin: '4px 0 0', fontSize: '0.88rem', fontWeight: 600, lineHeight: 1.35 }}>{t.message}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
